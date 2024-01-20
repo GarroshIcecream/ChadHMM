@@ -13,8 +13,10 @@ SUPPORTED_A = frozenset(('semi','left-to-right','ergodic'))
 class Observations:
     """Dataclass for a sequence of observations."""
     data: torch.Tensor
+    n_samples: int
     log_probs: torch.Tensor
-    start_indices: torch.Tensor
+    start_idx: torch.Tensor
+    end_idx: torch.Tensor
     lengths: List[int]
     n_sequences: int = field(default=1)
 

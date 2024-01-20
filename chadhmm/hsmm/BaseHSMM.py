@@ -36,21 +36,52 @@ class BaseHSMM(nn.Module,ABC):
     def seed(self):
         self._seed_gen.seed
 
+    @property
+    def A(self):
+        return self._params.A.data
+    
+    @A.setter
+    def A(self,logits:torch.Tensor):
+        assert (o:=self.A.shape) == (f:=logits.shape), ValueError(f'Expected shape {o} but got {f}') 
+        assert torch.allclose(logits.logsumexp(1),torch.ones(o)), ValueError(f'Probs do not sum to 1')
+        assert is_valid_A(logits,self._A_type), ValueError(f'Transition Matrix is not satisfying the constraints given by its type {self._A_type}')
+        self._params.A.data = logits 
+
+    @property
+    def pi(self):
+        return self._params.pi.data
+    
+    @pi.setter
+    def pi(self,logits:torch.Tensor):
+        assert (o:=self.pi.shape) == (f:=logits.shape), ValueError(f'Expected shape {o} but got {f}')
+        assert torch.allclose(logits.logsumexp(0),torch.ones(o)), ValueError(f'Probs do not sum to 1')
+        self._params.pi.data = logits
+
+    @property
+    def D(self):
+        return self._params.D.data
+    
+    @D.setter
+    def D(self,logits:torch.Tensor):
+        assert (o:=self.D.shape) == (f:=logits.shape), ValueError(f'Expected shape {o} but got {f}') 
+        assert torch.allclose(logits.logsumexp(1),torch.ones(o)), ValueError(f'Probs do not sum to 1')
+        self._params.D.data = logits
+
     @abstractproperty
     def pdf(self) -> Distribution:
         pass
     
     @abstractproperty
-    def dof(self):
+    def dof(self) -> int:
         """Returns the degrees of freedom of the model."""
         pass
 
     @abstractmethod
-    def estimate_emission_params(self,
-                                 X:Tuple[torch.Tensor,...],
-                                 posterior:List[torch.Tensor],
+    def estimate_emission_params(self, 
+                                 X:torch.Tensor, 
+                                 posterior:torch.Tensor, 
                                  theta:Optional[ContextualVariables]) -> nn.ParameterDict:
-        """Update the emission parameters."""
+        """Update the emission parameters where posterior is of shape (n_states,n_samples)"""
         pass
 
     @abstractmethod
@@ -77,6 +108,9 @@ class BaseHSMM(nn.Module,ABC):
         }))
 
         return model_params
+    
+    def sample(self, size):
+        return NotImplementedError('Sampling from HSMM yet to be implemented in next version')
 
     def map_emission(self, x:torch.Tensor) -> torch.Tensor:
         """Get emission probabilities for a given sequence of observations."""
@@ -96,28 +130,34 @@ class BaseHSMM(nn.Module,ABC):
             assert value.shape[1:] == events, ValueError(f'PDF event shape differs, expected {events} but got {value.shape[1:]}')
         return value
 
-    def to_observations(self, X:torch.Tensor, lengths:Optional[List[int]]=None) -> Observations:
+    def to_observations(self, 
+                        X:torch.Tensor, 
+                        lengths:Optional[List[int]]=None) -> Observations:
         """Convert a sequence of observations to an Observations object."""
         X_valid = self.check_constraints(X).double()
         n_samples = X_valid.size(0)
         if lengths is not None:
             assert (s:=sum(lengths)) == n_samples, ValueError(f'Lenghts do not sum to total number of samples provided {s} != {n_samples}')
-            seq_lenghts = lengths
+            seq_lengths = lengths
         else:
-            seq_lenghts = [n_samples]
+            seq_lengths = [n_samples]
         
-        n_sequences = len(seq_lenghts)
-        start_ind = torch.cumsum(torch.tensor([0] + seq_lenghts[:-1], dtype=torch.int), dim=0)
+        n_sequences = len(seq_lengths)
+        seq_idx = torch.cumsum(torch.tensor([0]+seq_lengths, dtype=torch.int), dim=0)
         
         return Observations(
-            X_valid,
-            self.map_emission(X_valid),
-            start_ind,
-            seq_lenghts,
-            n_sequences
+            data=X_valid,
+            n_samples=n_samples,
+            log_probs=self.map_emission(X_valid),
+            start_idx=seq_idx[:-1],
+            end_idx=seq_idx[1:]-1,
+            lengths=seq_lengths,
+            n_sequences=n_sequences
         )  
     
-    def to_contextuals(self, theta:torch.Tensor, X:Observations) -> ContextualVariables:
+    def to_contextuals(self, 
+                       theta:torch.Tensor, 
+                       X:Observations) -> ContextualVariables:
         """Returns the parameters of the model."""
         if (n_dim:=theta.ndim) != 2:
             raise ValueError(f'Context must be 2-dimensional. Got {n_dim}.')
@@ -132,24 +172,20 @@ class BaseHSMM(nn.Module,ABC):
                 adj_theta = adj_theta.expand(n_context+1, X.data.shape[0])
 
             context_matrix = torch.split(adj_theta,list(X.lengths),1)
-            return ContextualVariables(n_context, context_matrix, time_dependent) 
-        
-    def sample(self, size:Sequence[int]):
-        """Sample from Markov chain, either 1D for a single sequence or 2D for multiple sample sequences given by 0 axis."""
-        raise NotImplementedError('Yet not implemented for HSMM')
+            return ContextualVariables(n_context, context_matrix, time_dependent)
 
     def fit(self,
             X:torch.Tensor,
-            tol:float = 1e-2,
-            max_iter:int = 20,
-            n_init:int = 1,
-            post_conv_iter:int = 3,
-            ignore_conv:bool = False,
-            sample_B_from_X:bool = False,
-            verbose:bool = True,
-            plot_conv:bool = False,
-            lengths:Optional[List[int]] = None,
-            theta:Optional[torch.Tensor] = None):
+            tol:float=0.01,
+            max_iter:int=15,
+            n_init:int=1,
+            post_conv_iter:int=1,
+            ignore_conv:bool=False,
+            sample_B_from_X:bool=False,
+            verbose:bool=True,
+            plot_conv:bool=False,
+            lengths:Optional[List[int]]=None,
+            theta:Optional[torch.Tensor]=None):
         """Fit the model to the given sequence using the EM algorithm."""
         if sample_B_from_X:
             self._params.update(self.sample_emission_params(X))
@@ -188,7 +224,7 @@ class BaseHSMM(nn.Module,ABC):
     def predict(self, 
                 X:torch.Tensor, 
                 lengths:Optional[List[int]] = None,
-                algorithm:Literal['map','viterbi'] = 'viterbi') -> Tuple[torch.Tensor,List[torch.Tensor]]:
+                algorithm:Literal['map','viterbi'] = 'viterbi') -> List[torch.Tensor]:
         """Predict the most likely sequence of hidden states. Returns log-likelihood and sequences"""
         if algorithm not in DECODERS:
             raise ValueError(f'Unknown decoder algorithm {algorithm}')
@@ -197,55 +233,54 @@ class BaseHSMM(nn.Module,ABC):
                    'map': self._map}[algorithm]
         
         X_valid = self.to_observations(X,lengths)
-        log_score = self._compute_log_likelihood(X_valid)
         decoded_path = decoder(X_valid)
 
-        return log_score, decoded_path
+        return decoded_path
 
     def score(self, 
               X:torch.Tensor,
-              by_sample:bool=True,
-              lengths:Optional[List[int]]=None) -> torch.Tensor:
+              lengths:Optional[List[int]]=None,
+              by_sample:bool=True) -> torch.Tensor:
         """Compute the joint log-likelihood"""
         log_likelihoods = self._compute_log_likelihood(self.to_observations(X,lengths))
-        res = log_likelihoods if by_sample else log_likelihoods.sum()
+        res = log_likelihoods if by_sample else log_likelihoods.sum(0,keepdim=True)
         return res
 
     def ic(self,
            X:torch.Tensor,
-           by_sample:bool=True,
            lengths:Optional[List[int]] = None,
-           criterion:Literal['AIC','BIC','HQC'] = 'AIC') -> torch.Tensor:
+           criterion:Literal['AIC','BIC','HQC'] = 'AIC',
+           by_sample:bool=True) -> torch.Tensor:
         """Calculates the information criteria for a given model."""
         if criterion not in INFORM_CRITERIA:
             raise NotImplementedError(f'{criterion} is not a valid information criterion. Valid criteria are: {INFORM_CRITERIA}')
         
-        criterion_compute = {'AIC': lambda log_likelihood: -2.0 * log_likelihood + 2.0 * self.dof,
-                             'BIC': lambda log_likelihood: -2.0 * log_likelihood + self.dof * np.log(X.shape[0]),
-                             'HQC': lambda log_likelihood: -2.0 * log_likelihood + 2.0 * self.dof * np.log(np.log(X.shape[0]))}[criterion]
+        criterion_compute = {
+            'AIC': lambda log_likelihood: -2.0 * log_likelihood + 2.0 * self.dof,
+            'BIC': lambda log_likelihood: -2.0 * log_likelihood + self.dof * np.log(X.shape[0]),
+            'HQC': lambda log_likelihood: -2.0 * log_likelihood + 2.0 * self.dof * np.log(np.log(X.shape[0]))
+        }[criterion]
         
-        log_likelihood = self.score(X,by_sample,lengths)
+        log_likelihood = self.score(X,lengths,by_sample)
         log_likelihood.apply_(criterion_compute)
         return log_likelihood
 
     def _forward(self, X:Observations) -> torch.Tensor:
         """Forward pass of the forward-backward algorithm."""
-        alpha_vec = []
-        for seq_len,start_idx in zip(X.lengths,X.start_indices):
-            log_alpha = torch.zeros(size=(seq_len,self.n_states,self.max_duration),
-                                    dtype=torch.float64)
-            
-            log_alpha[0] = self.params.D + (self.params.pi + X.log_probs[start_idx]).reshape(-1,1)
-            for t in range(1,seq_len):
-                trans_alpha_sum = torch.logsumexp(log_alpha[t-1,:,0].reshape(-1,1) + self.params.A, dim=0) + X.log_probs[t]
-
-                log_alpha[t,:,-1] = trans_alpha_sum + self.params.D[:,-1]
-                log_alpha[t,:,:-1] = torch.logaddexp(log_alpha[t-1,:,1:] + X.log_probs[t].reshape(-1,1),
-                                                     trans_alpha_sum.reshape(-1,1) + self.params.D[:,:-1])
-            
-            alpha_vec.append(log_alpha)
+        log_alpha = torch.zeros(size=(X.n_samples,self.n_states,self.max_duration),
+                                dtype=torch.float64)
         
-        return torch.cat(alpha_vec)
+        # reshape into column vectors
+        log_alpha[X.start_idx] = self._params.D + (self._params.pi + X.log_probs[X.start_idx]).reshape(-1,1)
+        for t in range(X.n_samples):
+            if t not in X.start_idx:
+                trans_alpha_sum = torch.logsumexp(log_alpha[t-1,:,0].reshape(-1,1) + self._params.A, dim=0) + X.log_probs[t]
+
+                log_alpha[t,:,-1] = trans_alpha_sum + self._params.D[:,-1]
+                log_alpha[t,:,:-1] = torch.logaddexp(log_alpha[t-1,:,1:] + X.log_probs[t].reshape(-1,1),
+                                                    trans_alpha_sum.reshape(-1,1) + self._params.D[:,:-1])
+                
+        return log_alpha
 
     def _backward(self, X:Observations) -> torch.Tensor:
         """Backward pass of the forward-backward algorithm."""
@@ -360,7 +395,7 @@ class BaseHSMM(nn.Module,ABC):
         
         return new_params
 
-    def _viterbi(self, X:Observations) -> Sequence[torch.Tensor]:
+    def _viterbi(self, X:Observations) -> List[torch.Tensor]:
         """Viterbi algorithm for decoding the most likely sequence of hidden states."""
         raise NotImplementedError('Viterbi algorithm not yet implemented for HSMM')
 

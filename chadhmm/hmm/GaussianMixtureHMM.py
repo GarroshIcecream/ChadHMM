@@ -32,7 +32,7 @@ class GaussianMixtureHMM(BaseHMM):
     seed (Optional[int]):
         Random seed to use for reproducible results.
     """
-    __slots__ = 'n_components'
+
     COVAR_TYPES = Literal['spherical', 'tied', 'diag', 'full']
 
     def __init__(self,

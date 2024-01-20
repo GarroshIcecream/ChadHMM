@@ -6,16 +6,19 @@
 
 ## Table of Contents
 
-+ [About The Project](#about)
-+ [Getting Started](#getting_started)
-+ [Usage](#usage)
-+ [Unit Tests](#unit_tests)
-+ [References](#references)
-+ [License](#license)
+- [Chad Hidden Markov Models (ChadHMM)](#chad-hidden-markov-models-chadhmm)
+  - [Table of Contents](#table-of-contents)
+  - [About ](#about-)
+  - [Getting Started ](#getting-started-)
+  - [Usage ](#usage-)
+  - [Roadmap ](#roadmap-)
+  - [Unit Tests ](#unit-tests-)
+  - [References ](#references-)
+  - [License ](#license-)
 
 ## About <a name = "about"></a>
 
-This repository was created as an attempt to learn and recreate the parameter estimation for Hidden Markov Models using PyTorch library. Included are models with Categorical and Gaussian emissions for both Hidden Markov Models (HMM) and Hidden Semi-Markov Models(HSMM). As en extension I am trying to include models where the parameter estimation depends on certain set of external variables, these models are referred to as Contextual HMM or Parametric/Conditional HMM where the emission probabilities/distribution paramters are influenced by the context either time dependent or independent.
+This repository was created as an attempt to learn and recreate the parameter estimation for Hidden Markov Models using PyTorch library. Included are models with Categorical and Gaussian emissions for both Hidden Markov Models (HMM) and Hidden Semi-Markov Models(HSMM). As en extension I am trying to include models where the parameter estimation depends on certain set of external variables, these models are referred to as Contextual HMM or Parametric/Conditional HMM where the emission probabilities/distribution parameters are influenced by the context either time dependent or independent.
 
 [PYPI Package](https://pypi.org/project/chadhmm/)
 
@@ -42,19 +45,19 @@ Please refer to the [docs](https://github.com/GarroshIcecream/ChadHMM//tree/mast
 ## Roadmap <a name = "roadmap"></a>
 
 - [ ] Hidden Semi Markov Models
-  - [ ] Fix computation of posteriors 
+  - [ ] Fix computation of posteriors
   - [ ] Implementation of Viterbi algorithm for HSMM
-  - [x] Fix mean and covariance update in HSMM
 - [ ] Integration of contextual models
   - [ ] Time dependent context to be implemented
-  - [ ] Contextual Variables for covariances using GEM (Genereliazed Expectation Maximization algo)
-  - [ ] Contextual variables for Categorical emissions
-- [x] Support different types of Transition Matrices - semi, left-to-right and Ergodic
-- [ ] Implement different types of covariance matrices
-  - [ ] Connect that into degrees of freedom
+  - [ ] Contextual Variables for covariances using GEM (Generalized Expectation Maximization algorithm)
+  - [ ] Contextual variables for Multinomial emissions
+- [ ] Use Wrapped Distributions instead of Tensors with parameters - instead of Tensor with logits use Categorical distribution  
+  - [ ] Implement different types of covariance matrices
+  - [ ] Connect that with degrees of freedom
 - [ ] Improve the docs with examples
     - [ ] Application on financial time series prediction
 - [ ] Support for CUDA training
+- [x] Support different types of Transition Matrices - semi, left-to-right and ergodic
 - [x] Support for wider range of emissions distributions
 - [X] K-Means for Gaussian means initialization
 - [x] Code base refactor, abstractions might be confusing
