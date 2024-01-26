@@ -51,12 +51,30 @@ class GaussianHMM(BaseHMM):
 
     @property
     def dof(self):
-        return self.n_states**2 - 1 + self._params.means.numel() + self._params.covs.numel()
+        return self.n_states**2 - 1 + self.means.numel() + self._params.covs.numel()
     
     @property
-    def pdf(self) -> MultivariateNormal:
-        return MultivariateNormal(self._params.means,self._params.covs)
+    def means(self) -> torch.Tensor:
+        return self._params.means.data
+    
+    @means.setter
+    def means(self, new_means:torch.Tensor):
+        assert (o:=self.A.shape) == (f:=new_means.shape), ValueError(f'Expected shape {o} but got {f}') 
+        self._params.means.data = new_means
 
+    @property
+    def covs(self) -> torch.Tensor:
+        return self._params.covs.data
+
+    @covs.setter
+    def covs(self, new_covs:torch.Tensor):
+        assert (o:=self.A.shape) == (f:=new_covs.shape), ValueError(f'Expected shape {o} but got {f}')
+        self._params.covs.data = new_covs
+
+    @property
+    def pdf(self) -> MultivariateNormal:
+        return MultivariateNormal(self.means,self.covs)
+ 
     def sample_emission_params(self,X=None):
         if X is not None:
             means = self._sample_kmeans(X) if self.k_means else X.mean(dim=0).expand(self.n_states,-1).clone()
@@ -65,6 +83,7 @@ class GaussianHMM(BaseHMM):
         else:
             means = torch.zeros(size=(self.n_states, self.n_features), 
                                 dtype=torch.float64) 
+            
             covs = self.min_covar + torch.eye(n=self.n_features, 
                                               dtype=torch.float64).expand((self.n_states, self.n_features, self.n_features)).clone()
 
@@ -111,9 +130,9 @@ class GaussianHMM(BaseHMM):
         else:
             # TODO: Uses old mean value of normal distribution, correct?
             posterior_adj = posterior.unsqueeze(-1)
-            diff = X.expand(self.n_states,-1,-1) - self._params.means.unsqueeze(-2) # shape (N,T,F)
-            new_covs = torch.transpose(posterior_adj * diff,-1,-2) @ diff # shape (N,F,F)
-            new_covs /= posterior_adj.sum(-2,keepdim=True) # shape (N,1,1)
+            diff = X.expand(self.n_states,-1,-1) - self.means.unsqueeze(-2)
+            new_covs = torch.transpose(posterior_adj * diff,-1,-2) @ diff
+            new_covs /= posterior_adj.sum(-2,keepdim=True)
 
         new_covs += self.min_covar * torch.eye(self.n_features)
         return new_covs

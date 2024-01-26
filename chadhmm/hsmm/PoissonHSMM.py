@@ -1,10 +1,11 @@
-from typing import Optional, List
+from typing import Optional
 import torch
 import torch.nn as nn
 from torch.distributions import Poisson, Independent
 
 from .BaseHSMM import BaseHSMM # type: ignore
 from ..utils import ContextualVariables
+
 
 class PoissonHSMM(BaseHSMM):
     """
@@ -31,16 +32,27 @@ class PoissonHSMM(BaseHSMM):
                  alpha: float = 1.0,
                  seed: Optional[int] = None):
         
-        BaseHSMM.__init__(self,n_states,n_features,max_duration,alpha,seed)
+        self.n_features = n_features
+        super().__init__(n_states,max_duration,alpha,seed)
 
     @property
     def dof(self):
-        return self.n_states ** 2 + self.n_states * self.n_features - self.n_states - 1 + self.params.rates.numel()
+        return self.n_states ** 2 + self.n_states * self.n_features - self.n_states - 1 + self.rates.numel()
     
     @property
-    def pdf(self) -> Independent:
-        return Independent(Poisson(self.params.rates),1)
+    def rates(self) -> torch.Tensor:
+        return self._params.rates.data
     
+    @rates.setter
+    def rates(self,lambdas:torch.Tensor):
+        assert (o:=self.rates.shape) == (f:=lambdas.shape), ValueError(f'Expected shape {o} but got {f}') 
+        assert torch.all(lambdas > 0.0), ValueError(f'Rates must be nonnegative.')
+        self._params.rates.data = lambdas
+
+    @property
+    def pdf(self) -> Independent:
+        return Independent(Poisson(self.rates),1)
+
     def sample_emission_params(self,X=None):
         if X is not None:
             rates = X.mean(dim=0).expand(self.n_states,-1).clone()
@@ -58,22 +70,15 @@ class PoissonHSMM(BaseHSMM):
         })
 
     def _compute_rates(self,
-                       X:List[torch.Tensor],
-                       posterior:List[torch.Tensor],
+                       X:torch.Tensor,
+                       posterior:torch.Tensor,
                        theta:Optional[ContextualVariables]) -> torch.Tensor:
         """Compute the rates for each hidden state"""
-        new_rates = torch.zeros(size=(self.n_states, self.n_features), 
-                               dtype=torch.float64)
-        
-        denom = torch.zeros(size=(self.n_states,1), 
-                            dtype=torch.float64)
-        
-        for seq,gamma_val in zip(X,posterior):
-            if theta is not None:
-                # TODO: matmul shapes are inconsistent 
-                raise NotImplementedError('Contextualized emissions not implemented for PoissonHMM')
-            else:
-                new_rates += gamma_val.T @ seq.double()
-                denom += gamma_val.T.sum(dim=-1,keepdim=True)
+        if theta is not None:
+            # TODO: matmul shapes are inconsistent 
+            raise NotImplementedError('Contextualized emissions not implemented for PoissonHMM')
+        else:
+            new_rates = posterior @ X
+            new_rates /= posterior.sum(1,keepdim=True)
 
-        return new_rates / denom
+        return new_rates

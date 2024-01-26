@@ -1,4 +1,4 @@
-from typing import Generator, Tuple, Optional, List, Generator, Union, Literal
+from typing import Tuple, Optional, List, Union, Literal
 from dataclasses import dataclass, field
 
 import torch
@@ -186,7 +186,7 @@ def sample_A(prior:float,
     return probs
 
 def is_valid_A(logits:torch.Tensor,
-               A_type:Literal['semi','left-to-right','ergodic']='ergodic') -> bool:
+               A_type:str='ergodic') -> bool:
     """Check the constraints on the Transition Matrix given its type"""
     if A_type not in SUPPORTED_A:
         raise NotImplementedError(f'This type of Transition matrix is not supported {A_type} please use {SUPPORTED_A}')
@@ -199,41 +199,12 @@ def is_valid_A(logits:torch.Tensor,
 
 def log_normalize(matrix:torch.Tensor, dim:Union[int,Tuple[int,...]]=1) -> torch.Tensor:
     """Normalize a posterior probability matrix"""
-    return matrix - matrix.logsumexp(dim,True)
-
-def sequence_generator(X:Observations) -> Generator[Tuple[int,torch.Tensor,torch.Tensor], None, None]:
-    for X_len,seq,log_probs in zip(X.lengths,X.data,X.log_probs):
-        yield X_len, seq, log_probs       
-    
-def validate_lambdas(lambdas: torch.Tensor, n_states: int, n_features: int) -> torch.Tensor:
-    """Do basic checks on matrix mean sizes and values"""
-    
-    if len(lambdas.shape) != 2:
-        raise ValueError("lambdas must have shape (n_states, n_features)")
-    elif lambdas.shape[0] != n_states:
-        raise ValueError("lambdas must have shape (n_states, n_features)")
-    elif lambdas.shape[1] != n_features:
-        raise ValueError("lambdas must have shape (n_states, n_features)")
-    elif torch.any(torch.isnan(lambdas)):
-        raise ValueError("lambdas must not contain NaNs")
-    elif torch.any(torch.isinf(lambdas)):
-        raise ValueError("lambdas must not contain infinities")
-    elif torch.any(lambdas <= 0):
-        raise ValueError("lambdas must be positive")
-    else:
-        return lambdas
+    return matrix - matrix.logsumexp(dim,True)    
 
 def validate_covars(covars: torch.Tensor, 
                     covariance_type: str, 
-                    n_states: int, 
-                    n_features: int,
-                    n_components: Optional[int]=None) -> torch.Tensor:
+                    n_features: int) -> torch.Tensor:
     """Do basic checks on matrix covariance sizes and values"""
-    if n_components is None:
-        valid_shape = torch.Size((n_states, n_features, n_features))
-    else:
-        valid_shape = torch.Size((n_states, n_components, n_features, n_features))    
-
     if covariance_type == 'spherical':
         if len(covars) != n_features:
             raise ValueError("'spherical' covars have length n_features")
@@ -267,7 +238,6 @@ def init_covars(tied_cv: torch.Tensor,
                 covariance_type: str, 
                 n_states: int) -> torch.Tensor:
     """Initialize covars to a given covariance type"""
-
     if covariance_type == 'spherical':
         return tied_cv.mean() * torch.ones((n_states,))
     elif covariance_type == 'tied':
@@ -285,7 +255,6 @@ def fill_covars(covars: torch.Tensor,
                 n_features: int,
                 n_components: Optional[int]=None) -> torch.Tensor:
     """Fill in missing values for covars"""
-    
     if covariance_type == 'full':
         return covars
     elif covariance_type == 'diag':

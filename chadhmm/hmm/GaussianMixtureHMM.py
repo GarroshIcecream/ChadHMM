@@ -1,7 +1,7 @@
 from typing import Optional, Literal
 import torch
 import torch.nn as nn
-from torch.distributions import MultivariateNormal,MixtureSameFamily,Categorical
+from torch.distributions import MultivariateNormal, MixtureSameFamily, Categorical
 from sklearn.cluster import KMeans # type: ignore
 
 from .BaseHMM import BaseHMM # type: ignore

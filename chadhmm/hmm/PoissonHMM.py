@@ -1,4 +1,4 @@
-from typing import Optional, List, Literal
+from typing import Optional, Literal
 import torch
 import torch.nn as nn
 from torch.distributions import Poisson, Independent
@@ -39,6 +39,16 @@ class PoissonHMM(BaseHMM):
     def dof(self):
         return self.n_states ** 2 + self.n_states * self.n_features - self.n_states - 1 + self._params.rates.numel()
     
+    @property
+    def rates(self) -> torch.Tensor:
+        return self._params.rates.data
+    
+    @rates.setter
+    def rates(self,lambdas:torch.Tensor):
+        assert (o:=self.rates.shape) == (f:=lambdas.shape), ValueError(f'Expected shape {o} but got {f}') 
+        assert torch.all(lambdas > 0.0), ValueError(f'Rates must be nonnegative.')
+        self._params.rates.data = lambdas
+
     @property
     def pdf(self) -> Independent:
         return Independent(Poisson(self._params.rates),1)

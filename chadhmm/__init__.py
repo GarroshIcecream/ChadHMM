@@ -9,7 +9,7 @@ If you have any suggestions, please let me know. I'm open to all ideas.
 """
 
 __all__ = ['MultinomialHMM', 
-           'CategoricalHSMM', 
+           'MultinomialHSMM', 
            'GaussianHMM',
            'GaussianHSMM',
            'PoissonHMM',
@@ -19,4 +19,4 @@ __all__ = ['MultinomialHMM',
 
 # Import HMM objects
 from .hmm import MultinomialHMM, GaussianHMM, GaussianMixtureHMM, PoissonHMM
-from .hsmm import CategoricalHSMM, GaussianHSMM, GaussianMixtureHSMM, PoissonHSMM
+from .hsmm import MultinomialHSMM, GaussianHSMM, GaussianMixtureHSMM, PoissonHSMM

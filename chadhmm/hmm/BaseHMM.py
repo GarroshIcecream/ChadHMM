@@ -20,7 +20,7 @@ class BaseHMM(nn.Module,ABC):
 
     def __init__(self,
                  n_states:int,
-                 transitions:Literal['semi','ergodic','left-to-right'] = 'ergodic',
+                 transitions:Literal['ergodic','left-to-right','semi'] = 'ergodic',
                  alpha:float = 1.0,
                  seed:Optional[int] = None):
 
@@ -36,9 +36,9 @@ class BaseHMM(nn.Module,ABC):
         self._seed_gen.seed
 
     @property
-    def A(self):
+    def A(self) -> torch.Tensor:
         return self._params.A.data
-    
+     
     @A.setter
     def A(self,logits:torch.Tensor):
         assert (o:=self.A.shape) == (f:=logits.shape), ValueError(f'Expected shape {o} but got {f}') 
@@ -47,7 +47,7 @@ class BaseHMM(nn.Module,ABC):
         self._params.A.data = logits 
 
     @property
-    def pi(self):
+    def pi(self) -> torch.Tensor:
         return self._params.pi.data
     
     @pi.setter
@@ -82,7 +82,7 @@ class BaseHMM(nn.Module,ABC):
                             alpha:float = 1.0, 
                             X:Optional[torch.Tensor]=None) -> nn.ParameterDict:
         """Initialize the model parameters."""
-        model_params = self.sample_emission_params(X)
+        model_params = self.sample_emission_params(X)   
         model_params.update(nn.ParameterDict({
             'pi':nn.Parameter(
                 torch.log(sample_probs(alpha,(self.n_states,))),
@@ -106,8 +106,8 @@ class BaseHMM(nn.Module,ABC):
     # TODO: fix multiple sequence sampling
     def sample(self, size:Sequence[int]) -> torch.Tensor:
         """Sample from Markov chain, either 1D for a single sequence or 2D for multiple sample sequences given by 0 axis."""
-        pi_pdf = Categorical(logits=self._params.pi)
-        A_pdf = Categorical(logits=self._params.A)
+        pi_pdf = Categorical(logits=self.pi)
+        A_pdf = Categorical(logits=self.A)
         n_dim = len(size)
         if n_dim == 1:
             start_sample = torch.Size([1])
@@ -268,6 +268,7 @@ class BaseHMM(nn.Module,ABC):
 
         log_likelihood = self.score(X,lengths,by_sample)
         log_likelihood.apply_(criterion_compute)
+        
         return log_likelihood
     
     def _forward(self, X:Observations) -> torch.Tensor:
@@ -275,10 +276,10 @@ class BaseHMM(nn.Module,ABC):
         log_alpha = torch.zeros(size=(X.n_samples,self.n_states), 
                                 dtype=torch.float64)
 
-        log_alpha[X.start_idx] = X.log_probs[X.start_idx] + self._params.pi
+        log_alpha[X.start_idx] = X.log_probs[X.start_idx] + self.pi
         for t in range(X.n_samples):
             if t not in X.start_idx:
-                log_alpha[t] = X.log_probs[t] + torch.logsumexp(log_alpha[t-1].reshape(-1,1) + self._params.A, dim=0)
+                log_alpha[t] = X.log_probs[t] + torch.logsumexp(self.A + log_alpha[t-1].reshape(-1,1), dim=0)
 
         return log_alpha
     
@@ -287,9 +288,9 @@ class BaseHMM(nn.Module,ABC):
         log_beta = torch.zeros(size=(X.n_samples,self.n_states),
                                dtype=torch.float64)
 
-        for t in range(X.n_samples):
+        for t in reversed(range(X.n_samples)):
             if t not in X.end_idx:
-                log_beta[t] = torch.logsumexp(self._params.A + X.log_probs[t+1] + log_beta[t+1], dim=1)
+                log_beta[t] = torch.logsumexp(self.A + X.log_probs[t+1] + log_beta[t+1], dim=1)
             
         return log_beta
 
@@ -297,11 +298,21 @@ class BaseHMM(nn.Module,ABC):
         """Execute the forward-backward algorithm and compute the log-Gamma and log-Xi variables."""
         log_alpha = self._forward(X)
         log_beta = self._backward(X)
-
         log_gamma = log_normalize(log_alpha + log_beta)
-        log_xi_unnormed = log_alpha[:-1].unsqueeze(-1) + self._params.A.unsqueeze(0) + (X.log_probs[1:] + log_beta[1:]).unsqueeze(1)
-        log_xi = log_normalize(log_xi_unnormed,(1,2))
-        
+
+        # Computation of xi by using masked indexing
+        trans_alpha = self.A.unsqueeze(0) + log_alpha.unsqueeze(-1)
+        probs_beta = (X.log_probs + log_beta).unsqueeze(1)
+
+        # TODO: might be better way than creating masks
+        start_mask = torch.ones(log_beta.size(0), dtype=torch.bool)
+        end_mask = start_mask.clone()
+
+        start_mask[X.start_idx] = 0
+        end_mask[X.end_idx] = 0
+
+        log_xi = log_normalize(trans_alpha[end_mask] + probs_beta[start_mask],dim=(1,2))
+
         return log_gamma, log_xi
     
     def _estimate_model_params(self, X:Observations, theta:Optional[ContextualVariables]) -> nn.ParameterDict:
@@ -330,10 +341,10 @@ class BaseHMM(nn.Module,ABC):
                                    dtype=torch.float64)
         psi = viterbi_prob.clone()
 
-        viterbi_prob[X.start_idx] = X.log_probs[X.start_idx] + self._params.pi
+        viterbi_prob[X.start_idx] = X.log_probs[X.start_idx] + self.pi
         for t in range(X.n_samples):
             if t not in X.start_idx:
-                trans_seq = self._params.A + (viterbi_prob[t-1] + X.log_probs[t]).reshape(-1, 1)
+                trans_seq = self.A + (viterbi_prob[t-1] + X.log_probs[t]).reshape(-1, 1)
                 viterbi_prob[t] = torch.max(trans_seq)
                 psi[t] = torch.argmax(trans_seq, dim=0)
 

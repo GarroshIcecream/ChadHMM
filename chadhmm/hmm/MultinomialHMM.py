@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.distributions import Multinomial # type: ignore
 
 from .BaseHMM import BaseHMM # type: ignore
-from ..utils import ContextualVariables, log_normalize, sample_probs # type: ignore
+from ..utils import ContextualVariables, sample_probs # type: ignore
 
 
 class MultinomialHMM(BaseHMM):
@@ -59,6 +59,16 @@ class MultinomialHMM(BaseHMM):
     def dof(self):
         return self.n_states ** 2 + self.n_states * self.n_features - self.n_states - 1
     
+    @property
+    def B(self) -> torch.Tensor:
+        return self._params.B.data
+    
+    @B.setter
+    def B(self, emission_matrix:torch.Tensor):
+        assert (o:=self.A.shape) == (f:=emission_matrix.shape), ValueError(f'Expected shape {o} but got {f}') 
+        assert torch.allclose(emission_matrix.logsumexp(1),torch.ones(o)), ValueError(f'Probs do not sum to 1')
+        self._params.B.data = emission_matrix  
+
     @property
     def pdf(self) -> Multinomial:
         return Multinomial(total_count=self.n_trials,logits=self._params.B)
