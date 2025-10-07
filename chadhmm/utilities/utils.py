@@ -1,16 +1,17 @@
-from typing import Tuple, List
 from dataclasses import dataclass, field
+
 import torch
 
 
 @dataclass
 class Observations:
-    sequence: List[torch.Tensor]
-    log_probs: List[torch.Tensor]
-    lengths: List[int]
+    sequence: list[torch.Tensor]
+    log_probs: list[torch.Tensor]
+    lengths: list[int]
+
 
 @dataclass
 class ContextualVariables:
     n_context: int
-    X: Tuple[torch.Tensor,...]
+    X: tuple[torch.Tensor, ...]
     time_dependent: bool = field(default=False)

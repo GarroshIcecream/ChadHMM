@@ -28,14 +28,38 @@ The documentation on the parameter estimation and model description is captured 
 This is an example of how you may give instructions on setting up your project locally.
 To get a local copy up and running follow these simple example steps.
 
-1. Install from PyPi server
-   ```bash
-   $ pip install chadhmm
-   ```
-2. Clone the repo
+### Installation
+
+#### Option 1: Install from PyPI (recommended)
+```bash
+# Using pip
+$ pip install chadhmm
+
+# Using uv (faster)
+$ uv add chadhmm
+```
+
+#### Option 2: Development Installation
+1. Clone the repo
    ```bash
    $ git clone https://github.com/GarroshIcecream/ChadHMM.git
+   $ cd ChadHMM
    ```
+
+2. Install dependencies and the package in development mode
+   ```bash
+   # Using uv (recommended)
+   $ uv sync
+   $ uv run python -c "import chadhmm; print('Installation successful!')"
+   
+   # Or using pip
+   $ pip install -e .
+   ```
+
+### Prerequisites
+
+- Python 3.10 or higher
+- [uv](https://docs.astral.sh/uv/) (recommended for development) or pip
 
 ## Usage <a name = "usage"></a>
 
@@ -114,8 +138,12 @@ See the [open issues](https://github.com/GarroshIcecream/ChadHMM/issues) for a f
 
 If you want to run the unit tests, execute the following command:
 
-```ShellSession
-$ make tests
+```bash
+# Using uv (recommended)
+$ uv run pytest
+
+# Or using pip
+$ python -m pytest tests/
 ```
 
 ## References <a name = "references"></a>
