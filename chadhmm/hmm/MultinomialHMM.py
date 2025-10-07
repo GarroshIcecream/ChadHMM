@@ -1,10 +1,9 @@
 import torch
 from torch.distributions import Multinomial
 
-from typing import Optional
 from chadhmm.hmm.BaseHMM import BaseHMM
+from chadhmm.schemas import ContextualVariables, Transitions
 from chadhmm.utils import constraints
-from chadhmm.schemas import Transitions, ContextualVariables
 
 
 class MultinomialHMM(BaseHMM):
@@ -55,7 +54,7 @@ class MultinomialHMM(BaseHMM):
         transitions: Transitions,
         n_trials: int = 1,
         alpha: float = 1.0,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         self.n_features = n_features
         self.n_trials = n_trials
@@ -69,7 +68,7 @@ class MultinomialHMM(BaseHMM):
     def dof(self):
         return self.n_states**2 + self.n_states * self.n_features - self.n_states - 1
 
-    def sample_emission_pdf(self, X: Optional[torch.Tensor] = None) -> Multinomial:
+    def sample_emission_pdf(self, X: torch.Tensor | None = None) -> Multinomial:
         if X is not None:
             emission_freqs = torch.bincount(X) / X.shape[0]
             emission_matrix = torch.log(emission_freqs.expand(self.n_states, -1))
@@ -80,7 +79,12 @@ class MultinomialHMM(BaseHMM):
 
         return Multinomial(total_count=self.n_trials, logits=emission_matrix)
 
-    def _estimate_emission_pdf(self, X: torch.Tensor, posterior: torch.Tensor, theta: Optional[ContextualVariables] = None):
+    def _estimate_emission_pdf(
+        self,
+        X: torch.Tensor,
+        posterior: torch.Tensor,
+        theta: ContextualVariables | None = None,
+    ):
         new_B = torch.log(self._compute_B(X, posterior, theta))
         return Multinomial(total_count=self.n_trials, logits=new_B)
 
@@ -88,7 +92,7 @@ class MultinomialHMM(BaseHMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> torch.Tensor:
         """Compute the emission probabilities for each hidden state."""
         if theta is not None:

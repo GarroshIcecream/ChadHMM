@@ -1,7 +1,6 @@
 import torch
 from sklearn.cluster import KMeans
 from torch.distributions import MultivariateNormal
-from typing import Optional
 
 from chadhmm.hsmm.BaseHSMM import BaseHSMM
 from chadhmm.schemas import ContextualVariables, CovarianceType
@@ -44,7 +43,7 @@ class GaussianHSMM(BaseHSMM):
         k_means: bool = False,
         alpha: float = 1.0,
         min_covar: float = 1e-3,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         self.n_features = n_features
         self.min_covar = min_covar
@@ -93,7 +92,7 @@ class GaussianHSMM(BaseHSMM):
         new_covs = self._compute_covs(X, posterior, new_means, theta)
         return MultivariateNormal(new_means, new_covs)
 
-    def _sample_kmeans(self, X: torch.Tensor, seed: Optional[int] = None) -> torch.Tensor:
+    def _sample_kmeans(self, X: torch.Tensor, seed: int | None = None) -> torch.Tensor:
         """Sample cluster means from K Means algorithm"""
         k_means_alg = KMeans(
             n_clusters=self.n_states, random_state=seed, n_init="auto"
@@ -107,7 +106,7 @@ class GaussianHSMM(BaseHSMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> torch.Tensor:
         """Compute the means for each hidden state"""
         if theta is not None:
@@ -126,7 +125,7 @@ class GaussianHSMM(BaseHSMM):
         X: torch.Tensor,
         posterior: torch.Tensor,
         new_means: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> torch.Tensor:
         """Compute the covariances for each component."""
         if theta is not None:

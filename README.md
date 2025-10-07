@@ -1,8 +1,8 @@
 # Chad Hidden Markov Models (ChadHMM)
 
 <div align="center">
-  <img src="./assets/chadhmm_logo.svg" alt="ChadHMM Logo" width="300" />
-  
+  <img src="./assets/chadhmm_logo.svg" alt="ChadHMM Logo"/>
+
 
   [![chadhmm](https://badge.fury.io/py/chadhmm.svg)](https://badge.fury.io/py/chadhmm)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/GarroshIcecream/ChadHMM/blob/master/LICENSE)
@@ -85,7 +85,7 @@ hmm.fit(X=one_hot,max_iter=5,lengths=[400,600],n_init=1,verbose=False)
 # Compute log likelihood of generated sequence (set by_sample=False for joint log likelihood)
 log_likes = hmm.score(
   one_hot,
-  lengths=[400,500,100], 
+  lengths=[400,500,100],
   by_sample=True
 )
 print(log_likes)
@@ -116,7 +116,7 @@ print(viterbi_path)
   - [ ] Time dependent context
   - [ ] Contextual Variables for covariances using GEM (Generalized Expectation Maximization algorithm)
   - [ ] Contextual variables for Multinomial emissions
-- [ ] Use Wrapped Distributions instead of Tensors with parameters - instead of Tensor with logits use Categorical distribution  
+- [ ] Use Wrapped Distributions instead of Tensors with parameters - instead of Tensor with logits use Categorical distribution
   - [ ] Implement different types of covariance matrices
   - [ ] Connect that with degrees of freedom
 - [ ] Improve the docs with examples

@@ -1,9 +1,8 @@
 import torch
 from torch.distributions import Independent, Poisson
-from typing import Optional
 
 from chadhmm.hmm.BaseHMM import BaseHMM
-from chadhmm.schemas import Transitions, ContextualVariables
+from chadhmm.schemas import ContextualVariables, Transitions
 
 
 class PoissonHMM(BaseHMM):
@@ -39,7 +38,7 @@ class PoissonHMM(BaseHMM):
         n_features: int,
         transitions: Transitions,
         alpha: float = 1.0,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         self.n_features = n_features
         super().__init__(n_states, transitions, alpha, seed)
@@ -76,7 +75,7 @@ class PoissonHMM(BaseHMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> torch.Tensor:
         """Compute the rates for each hidden state"""
         if theta is not None:

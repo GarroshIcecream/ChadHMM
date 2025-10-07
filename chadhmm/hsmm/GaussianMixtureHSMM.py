@@ -1,11 +1,10 @@
 import torch
 from sklearn.cluster import KMeans
 from torch.distributions import Categorical, MixtureSameFamily, MultivariateNormal
-from typing import Optional
 
 from chadhmm.hsmm.BaseHSMM import BaseHSMM
-from chadhmm.utils import constraints
 from chadhmm.schemas import ContextualVariables, CovarianceType
+from chadhmm.utils import constraints
 
 
 class GaussianMixtureHSMM(BaseHSMM):
@@ -46,7 +45,7 @@ class GaussianMixtureHSMM(BaseHSMM):
         k_means: bool = False,
         alpha: float = 1.0,
         min_covar: float = 1e-3,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         self.n_features = n_features
         self.min_covar = min_covar
@@ -109,8 +108,7 @@ class GaussianMixtureHSMM(BaseHSMM):
         posterior_resp = responsibilities.permute(1, 2, 0) * posterior.T.unsqueeze(-2)
 
         new_weights = constraints.log_normalize(
-            matrix=torch.log(posterior_resp.sum(-1)), 
-            dim=1
+            matrix=torch.log(posterior_resp.sum(-1)), dim=1
         )
         new_means = self._compute_means(X, posterior_resp, theta)
         new_covs = self._compute_covs(X, posterior_resp, new_means, theta)
@@ -120,7 +118,7 @@ class GaussianMixtureHSMM(BaseHSMM):
             MultivariateNormal(loc=new_means, covariance_matrix=new_covs),
         )
 
-    def _sample_kmeans(self, X: torch.Tensor, seed: Optional[int] = None) -> torch.Tensor:
+    def _sample_kmeans(self, X: torch.Tensor, seed: int | None = None) -> torch.Tensor:
         """Sample cluster means from K Means algorithm"""
         k_means_alg = KMeans(
             n_clusters=self.n_states, random_state=seed, n_init="auto"
@@ -135,8 +133,9 @@ class GaussianMixtureHSMM(BaseHSMM):
         X_expanded = X.unsqueeze(-2).unsqueeze(-2)
         component_log_probs = self.pdf.component_distribution.log_prob(X_expanded)
         log_responsibilities = constraints.log_normalize(
-            matrix=self.pdf.mixture_distribution.logits.unsqueeze(0) + component_log_probs,
-            dim=1
+            matrix=self.pdf.mixture_distribution.logits.unsqueeze(0)
+            + component_log_probs,
+            dim=1,
         )
         return log_responsibilities
 
@@ -144,7 +143,7 @@ class GaussianMixtureHSMM(BaseHSMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> torch.Tensor:
         """Compute the means for each hidden state"""
         if theta is not None:
@@ -163,7 +162,7 @@ class GaussianMixtureHSMM(BaseHSMM):
         X: torch.Tensor,
         posterior: torch.Tensor,
         new_means: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> torch.Tensor:
         """Compute the covariances for each component."""
         if theta is not None:

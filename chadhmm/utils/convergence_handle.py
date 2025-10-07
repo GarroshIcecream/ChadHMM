@@ -41,11 +41,13 @@ class ConvergenceHandler:
         self.delta = self.score.clone()
 
     def __repr__(self):
-        return (f"ConvergenceHandler(tol={self.tol}, "
-                f"n_iters={self.max_iter + 1}, "
-                f"post_conv_iter={self.post_conv_iter}, "
-                f"converged={self.is_converged}, "
-                f"verbose={self.verbose})")
+        return (
+            f"ConvergenceHandler(tol={self.tol}, "
+            f"n_iters={self.max_iter + 1}, "
+            f"post_conv_iter={self.post_conv_iter}, "
+            f"converged={self.is_converged}, "
+            f"verbose={self.verbose})"
+        )
 
     def push_pull(self, new_score: torch.Tensor, iter: int, rank: int) -> bool:
         """Push a new score and check for convergence."""

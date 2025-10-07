@@ -12,7 +12,7 @@ authors = [
     {name = "GarroshIcecream", email = "garroshicecream@gmail.com"}
 ]
 keywords = [
-    "hmm", "hsmm", "gmm", "ghmm", "ghsmm", 
+    "hmm", "hsmm", "gmm", "ghmm", "ghsmm",
     "hidden-markov-model", "hidden-semi-markov-model",
     "contexthmm", "contexthsmm", "parametrichmm"
 ]
@@ -104,4 +104,3 @@ exclude = [
     "docs/",
     "*.ipynb",
 ]
-

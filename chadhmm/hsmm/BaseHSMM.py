@@ -1,18 +1,18 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional, List, Tuple
+from typing import Any
 
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Distribution
 
-from chadhmm.utils import ConvergenceHandler, SeedGenerator, constraints
 from chadhmm.schemas import (
-    Observations, 
-    ContextualVariables, 
+    ContextualVariables,
     DecodingAlgorithm,
     InformCriteria,
-    Transitions
+    Observations,
+    Transitions,
 )
+from chadhmm.utils import ConvergenceHandler, SeedGenerator, constraints
 
 
 class BaseHSMM(nn.Module, ABC):
@@ -27,7 +27,7 @@ class BaseHSMM(nn.Module, ABC):
     """
 
     def __init__(
-        self, n_states: int, max_duration: int, alpha: float, seed: Optional[int] = None
+        self, n_states: int, max_duration: int, alpha: float, seed: int | None = None
     ):
         super().__init__()
         self.n_states = n_states
@@ -100,24 +100,22 @@ class BaseHSMM(nn.Module, ABC):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> Distribution:
         """Update the emission parameters where posterior is of shape
         (n_states,n_samples)"""
         pass
 
     @abstractmethod
-    def sample_emission_pdf(self, X: Optional[torch.Tensor] = None) -> Distribution:
+    def sample_emission_pdf(self, X: torch.Tensor | None = None) -> Distribution:
         """Sample the emission parameters."""
         pass
 
-    def sample_model_params(self, X: Optional[torch.Tensor] = None) -> nn.ParameterDict:
+    def sample_model_params(self, X: torch.Tensor | None = None) -> nn.ParameterDict:
         """Initialize the model parameters."""
         sampled_pi = torch.log(constraints.sample_probs(self.alpha, (self.n_states,)))
         sampled_A = torch.log(
-            constraints.sample_A(
-                self.alpha, self.n_states, Transitions.SEMI
-            )
+            constraints.sample_A(self.alpha, self.n_states, Transitions.SEMI)
         )
         sampled_D = torch.log(
             constraints.sample_probs(self.alpha, (self.n_states, self.max_duration))
@@ -168,7 +166,7 @@ class BaseHSMM(nn.Module, ABC):
         return value
 
     def to_observations(
-        self, X: torch.Tensor, lengths: Optional[List[int]] = None
+        self, X: torch.Tensor, lengths: list[int] | None = None
     ) -> Observations:
         """Convert a sequence of observations to an utils.Observations object."""
         X_valid = self.check_constraints(X).double()
@@ -222,8 +220,8 @@ class BaseHSMM(nn.Module, ABC):
         sample_B_from_X: bool = False,
         verbose: bool = True,
         plot_conv: bool = False,
-        lengths: Optional[List[int]] = None,
-        theta: Optional[torch.Tensor] = None,
+        lengths: list[int] | None = None,
+        theta: torch.Tensor | None = None,
     ):
         """Fit the model to the given sequence using the EM algorithm."""
         if sample_B_from_X:
@@ -267,8 +265,8 @@ class BaseHSMM(nn.Module, ABC):
         self,
         X: torch.Tensor,
         algorithm: DecodingAlgorithm,
-        lengths: Optional[List[int]] = None,
-    ) -> List[torch.Tensor]:
+        lengths: list[int] | None = None,
+    ) -> list[torch.Tensor]:
         """Predict the most likely sequence of hidden states"""
         X_valid = self.to_observations(X, lengths)
         if algorithm == DecodingAlgorithm.MAP:
@@ -281,7 +279,7 @@ class BaseHSMM(nn.Module, ABC):
         return decoded_path
 
     def score(
-        self, X: torch.Tensor, lengths: Optional[List[int]] = None, by_sample: bool = True
+        self, X: torch.Tensor, lengths: list[int] | None = None, by_sample: bool = True
     ) -> torch.Tensor:
         """Compute the joint log-likelihood"""
         X_valid = self.to_observations(X, lengths)
@@ -296,7 +294,7 @@ class BaseHSMM(nn.Module, ABC):
         self,
         X: torch.Tensor,
         criterion: InformCriteria,
-        lengths: Optional[List[int]] = None,
+        lengths: list[int] | None = None,
         by_sample: bool = True,
     ) -> torch.Tensor:
         """Calculates the information criteria for a given model."""
@@ -305,9 +303,9 @@ class BaseHSMM(nn.Module, ABC):
             X.shape[0], log_likelihood, self.dof, criterion
         )
 
-    def _forward(self, X: Observations) -> List[torch.Tensor]:
+    def _forward(self, X: Observations) -> list[torch.Tensor]:
         """Forward pass of the forward-backward algorithm."""
-        alpha_vec: List[torch.Tensor] = []
+        alpha_vec: list[torch.Tensor] = []
         for seq_probs, seq_len in zip(X.log_probs, X.lengths, strict=False):
             log_alpha = torch.zeros(
                 size=(seq_len, self.n_states, self.max_duration), dtype=torch.float64
@@ -330,9 +328,9 @@ class BaseHSMM(nn.Module, ABC):
 
         return alpha_vec
 
-    def _backward(self, X: Observations) -> List[torch.Tensor]:
+    def _backward(self, X: Observations) -> list[torch.Tensor]:
         """Backward pass of the forward-backward algorithm."""
-        beta_vec: List[torch.Tensor] = []
+        beta_vec: list[torch.Tensor] = []
         for seq_probs, seq_len in zip(X.log_probs, X.lengths, strict=False):
             log_beta = torch.zeros(
                 size=(seq_len, self.n_states, self.max_duration), dtype=torch.float64
@@ -353,17 +351,15 @@ class BaseHSMM(nn.Module, ABC):
 
         return beta_vec
 
-    def _compute_posteriors(
-        self, X: Observations
-    ) -> Tuple[List[torch.Tensor], ...]:
+    def _compute_posteriors(self, X: Observations) -> tuple[list[torch.Tensor], ...]:
         """Execute the forward-backward algorithm and compute the log-Gamma,
         log-Xi and Log-Eta variables."""
         log_alpha = self._forward(X)
         log_beta = self._backward(X)
 
-        xi_vec: List[torch.Tensor] = []
-        eta_vec: List[torch.Tensor] = []
-        gamma_vec: List[torch.Tensor] = []
+        xi_vec: list[torch.Tensor] = []
+        eta_vec: list[torch.Tensor] = []
+        gamma_vec: list[torch.Tensor] = []
 
         for seq_len, seq_probs, alpha, beta in zip(
             X.lengths, X.log_probs, log_alpha, log_beta, strict=False
@@ -399,23 +395,16 @@ class BaseHSMM(nn.Module, ABC):
         return gamma_vec, xi_vec, eta_vec
 
     def _estimate_model_params(
-        self, X: Observations, theta: Optional[ContextualVariables] = None
+        self, X: Observations, theta: ContextualVariables | None = None
     ) -> nn.ParameterDict:
         """Compute the updated parameters for the model."""
         log_gamma, log_xi, log_eta = self._compute_posteriors(X)
 
         new_pi = constraints.log_normalize(
-            matrix=torch.stack([tens[0] for tens in log_gamma], 1).logsumexp(1), 
-            dim=0
+            matrix=torch.stack([tens[0] for tens in log_gamma], 1).logsumexp(1), dim=0
         )
-        new_A = constraints.log_normalize(
-            matrix=torch.cat(log_xi).logsumexp(0), 
-            dim=1
-        )
-        new_D = constraints.log_normalize(
-            matrix=torch.cat(log_eta).logsumexp(0), 
-            dim=1
-        )
+        new_A = constraints.log_normalize(matrix=torch.cat(log_xi).logsumexp(0), dim=1)
+        new_D = constraints.log_normalize(matrix=torch.cat(log_eta).logsumexp(0), dim=1)
         new_pdf = self._estimate_emission_pdf(
             X=torch.cat(X.sequence), posterior=torch.cat(log_gamma).exp(), theta=theta
         )
@@ -430,11 +419,11 @@ class BaseHSMM(nn.Module, ABC):
         )
 
     # TODO: Implement Viterbi algorithm
-    def _viterbi(self, X: Observations) -> List[torch.Tensor]:
+    def _viterbi(self, X: Observations) -> list[torch.Tensor]:
         """Viterbi algorithm for decoding the most likely sequence of hidden states."""
         raise NotImplementedError("Viterbi algorithm not yet implemented for HSMM")
 
-    def _map(self, X: Observations) -> List[torch.Tensor]:
+    def _map(self, X: Observations) -> list[torch.Tensor]:
         """Compute the most likely (MAP) sequence of indiviual hidden states."""
         gamma, _, _ = self._compute_posteriors(X)
         map_paths = [gamma.argmax(1) for gamma in gamma]

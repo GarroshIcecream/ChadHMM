@@ -1,9 +1,8 @@
 import torch
 from torch.distributions import Multinomial
-from typing import Optional
 
-from chadhmm.utils import constraints
 from chadhmm.schemas import ContextualVariables
+from chadhmm.utils import constraints
 
 
 class MultinomialDist(Multinomial):
@@ -21,7 +20,7 @@ class MultinomialDist(Multinomial):
         batch_shape: int,
         event_shape: int,
         alpha: float = 1.0,
-        X: Optional[torch.Tensor] = None,
+        X: torch.Tensor | None = None,
     ):
         if X:
             emission_freqs = torch.bincount(X) / X.shape[0]
@@ -37,7 +36,7 @@ class MultinomialDist(Multinomial):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ):
         self.logits = torch.log(self._compute_B(X, posterior, theta))
 
@@ -45,7 +44,7 @@ class MultinomialDist(Multinomial):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: Optional[ContextualVariables] = None,
+        theta: ContextualVariables | None = None,
     ) -> torch.Tensor:
         """Compute the emission probabilities for each hidden state."""
         if theta:

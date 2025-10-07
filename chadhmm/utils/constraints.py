@@ -1,12 +1,11 @@
 import numpy as np
 import torch
-from typing import Tuple, Union, Optional
 
-from chadhmm.schemas.common import Transitions, InformCriteria, CovarianceType
+from chadhmm.schemas.common import CovarianceType, InformCriteria, Transitions
 
 
 def sample_probs(
-    prior: float, target_size: Tuple[int, ...] | torch.Size
+    prior: float, target_size: tuple[int, ...] | torch.Size
 ) -> torch.Tensor:
     """Initialize a matrix of probabilities"""
     alphas = torch.full(size=target_size, fill_value=prior, dtype=torch.float64)
@@ -62,7 +61,7 @@ def is_valid_A(logits: torch.Tensor, A_type: Transitions) -> bool:
         )
 
 
-def log_normalize(matrix: torch.Tensor, dim: Union[int, Tuple[int, ...]]) -> torch.Tensor:
+def log_normalize(matrix: torch.Tensor, dim: int | tuple[int, ...]) -> torch.Tensor:
     """Normalize a posterior probability matrix"""
     return matrix - matrix.logsumexp(dim, True)
 
@@ -93,7 +92,7 @@ def validate_covars(
     covariance_type: CovarianceType,
     n_states: int,
     n_features: int,
-    n_components: Optional[int] = None,
+    n_components: int | None = None,
 ) -> torch.Tensor:
     """Do basic checks on matrix covariance sizes and values"""
     if n_components is None:
@@ -162,7 +161,7 @@ def fill_covars(
     covariance_type: CovarianceType,
     n_states: int,
     n_features: int,
-    n_components: Optional[int] = None,
+    n_components: int | None = None,
 ) -> torch.Tensor:
     """Fill in missing values for covars"""
     if covariance_type == CovarianceType.FULL:
