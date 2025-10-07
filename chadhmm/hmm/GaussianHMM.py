@@ -1,9 +1,11 @@
 import torch
 from sklearn.cluster import KMeans
 from torch.distributions import MultivariateNormal
+from typing import Optional
 
 from chadhmm.hmm.BaseHMM import BaseHMM
-from chadhmm.utilities import constraints, utils
+from chadhmm.utils import constraints
+from chadhmm.schemas import Transitions, ContextualVariables, CovarianceType
 
 
 class GaussianHMM(BaseHMM):
@@ -45,12 +47,12 @@ class GaussianHMM(BaseHMM):
         self,
         n_states: int,
         n_features: int,
-        transitions: constraints.Transitions = constraints.Transitions.ERGODIC,
-        covariance_type: constraints.CovarianceType = constraints.CovarianceType.FULL,
+        transitions: Transitions,
+        covariance_type: CovarianceType,
         alpha: float = 1.0,
         k_means: bool = False,
         min_covar: float = 1e-3,
-        seed: int | None = None,
+        seed: Optional[int] = None,
     ):
         self.n_features = n_features
         self.k_means = k_means
@@ -177,7 +179,7 @@ class GaussianHMM(BaseHMM):
         new_covs = self._compute_covs(X, posterior, new_means, theta)
         return MultivariateNormal(new_means, new_covs)
 
-    def _sample_kmeans(self, X: torch.Tensor, seed: int | None = None) -> torch.Tensor:
+    def _sample_kmeans(self, X: torch.Tensor, seed: Optional[int] = None) -> torch.Tensor:
         """Improved K-means initialization with multiple attempts."""
         best_inertia = float("inf")
         best_centers = None
@@ -230,7 +232,7 @@ class GaussianHMM(BaseHMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: utils.ContextualVariables | None = None,
+        theta: Optional[ContextualVariables] = None,
     ) -> torch.Tensor:
         """Compute the means for each hidden state."""
         if theta is not None:
@@ -245,7 +247,7 @@ class GaussianHMM(BaseHMM):
         X: torch.Tensor,
         posterior: torch.Tensor,
         new_means: torch.Tensor,
-        theta: utils.ContextualVariables | None = None,
+        theta: Optional[ContextualVariables] = None,
     ) -> torch.Tensor:
         """Compute the covariances for each component."""
         if theta is not None:

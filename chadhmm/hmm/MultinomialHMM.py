@@ -1,8 +1,10 @@
 import torch
 from torch.distributions import Multinomial
 
+from typing import Optional
 from chadhmm.hmm.BaseHMM import BaseHMM
-from chadhmm.utilities import constraints, utils
+from chadhmm.utils import constraints
+from chadhmm.schemas import Transitions, ContextualVariables
 
 
 class MultinomialHMM(BaseHMM):
@@ -50,10 +52,10 @@ class MultinomialHMM(BaseHMM):
         self,
         n_states: int,
         n_features: int,
+        transitions: Transitions,
         n_trials: int = 1,
-        transitions: constraints.Transitions = constraints.Transitions.ERGODIC,
         alpha: float = 1.0,
-        seed: int | None = None,
+        seed: Optional[int] = None,
     ):
         self.n_features = n_features
         self.n_trials = n_trials
@@ -67,7 +69,7 @@ class MultinomialHMM(BaseHMM):
     def dof(self):
         return self.n_states**2 + self.n_states * self.n_features - self.n_states - 1
 
-    def sample_emission_pdf(self, X=None) -> Multinomial:
+    def sample_emission_pdf(self, X: Optional[torch.Tensor] = None) -> Multinomial:
         if X is not None:
             emission_freqs = torch.bincount(X) / X.shape[0]
             emission_matrix = torch.log(emission_freqs.expand(self.n_states, -1))
@@ -78,7 +80,7 @@ class MultinomialHMM(BaseHMM):
 
         return Multinomial(total_count=self.n_trials, logits=emission_matrix)
 
-    def _estimate_emission_pdf(self, X, posterior, theta=None):
+    def _estimate_emission_pdf(self, X: torch.Tensor, posterior: torch.Tensor, theta: Optional[ContextualVariables] = None):
         new_B = torch.log(self._compute_B(X, posterior, theta))
         return Multinomial(total_count=self.n_trials, logits=new_B)
 
@@ -86,7 +88,7 @@ class MultinomialHMM(BaseHMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: utils.ContextualVariables | None = None,
+        theta: Optional[ContextualVariables] = None,
     ) -> torch.Tensor:
         """Compute the emission probabilities for each hidden state."""
         if theta is not None:

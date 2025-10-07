@@ -1,9 +1,11 @@
 import torch
 from sklearn.cluster import KMeans
 from torch.distributions import Categorical, MixtureSameFamily, MultivariateNormal
+from typing import Optional
 
 from chadhmm.hsmm.BaseHSMM import BaseHSMM
-from chadhmm.utilities import constraints, utils
+from chadhmm.utils import constraints
+from chadhmm.schemas import ContextualVariables, CovarianceType
 
 
 class GaussianMixtureHSMM(BaseHSMM):
@@ -11,9 +13,7 @@ class GaussianMixtureHSMM(BaseHSMM):
     Gaussian Hidden Semi-Markov Model (Gaussian HSMM)
     ----------
     This model assumes that the data follow a multivariate Gaussian distribution.
-    The model parameters (initial state probabilities, transition probabilities,
-    duration probabilities,emission means, and emission covariances)
-    are learned using the Baum-Welch algorithm.
+    The model parameters are learned using the Baum-Welch algorithm.
 
     Parameters:
     ----------
@@ -41,12 +41,12 @@ class GaussianMixtureHSMM(BaseHSMM):
         n_states: int,
         n_features: int,
         max_duration: int,
+        covariance_type: CovarianceType,
         n_components: int = 1,
         k_means: bool = False,
         alpha: float = 1.0,
-        covariance_type: constraints.CovarianceType = constraints.CovarianceType.FULL,
         min_covar: float = 1e-3,
-        seed: int | None = None,
+        seed: Optional[int] = None,
     ):
         self.n_features = n_features
         self.min_covar = min_covar
@@ -108,7 +108,10 @@ class GaussianMixtureHSMM(BaseHSMM):
         responsibilities = self._compute_log_responsibilities(X).exp()
         posterior_resp = responsibilities.permute(1, 2, 0) * posterior.T.unsqueeze(-2)
 
-        new_weights = constraints.log_normalize(torch.log(posterior_resp.sum(-1)))
+        new_weights = constraints.log_normalize(
+            matrix=torch.log(posterior_resp.sum(-1)), 
+            dim=1
+        )
         new_means = self._compute_means(X, posterior_resp, theta)
         new_covs = self._compute_covs(X, posterior_resp, new_means, theta)
 
@@ -117,7 +120,7 @@ class GaussianMixtureHSMM(BaseHSMM):
             MultivariateNormal(loc=new_means, covariance_matrix=new_covs),
         )
 
-    def _sample_kmeans(self, X: torch.Tensor, seed: int | None = None) -> torch.Tensor:
+    def _sample_kmeans(self, X: torch.Tensor, seed: Optional[int] = None) -> torch.Tensor:
         """Sample cluster means from K Means algorithm"""
         k_means_alg = KMeans(
             n_clusters=self.n_states, random_state=seed, n_init="auto"
@@ -132,7 +135,8 @@ class GaussianMixtureHSMM(BaseHSMM):
         X_expanded = X.unsqueeze(-2).unsqueeze(-2)
         component_log_probs = self.pdf.component_distribution.log_prob(X_expanded)
         log_responsibilities = constraints.log_normalize(
-            self.pdf.mixture_distribution.logits.unsqueeze(0) + component_log_probs
+            matrix=self.pdf.mixture_distribution.logits.unsqueeze(0) + component_log_probs,
+            dim=1
         )
         return log_responsibilities
 
@@ -140,7 +144,7 @@ class GaussianMixtureHSMM(BaseHSMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: utils.ContextualVariables | None = None,
+        theta: Optional[ContextualVariables] = None,
     ) -> torch.Tensor:
         """Compute the means for each hidden state"""
         if theta is not None:
@@ -159,7 +163,7 @@ class GaussianMixtureHSMM(BaseHSMM):
         X: torch.Tensor,
         posterior: torch.Tensor,
         new_means: torch.Tensor,
-        theta: utils.ContextualVariables | None = None,
+        theta: Optional[ContextualVariables] = None,
     ) -> torch.Tensor:
         """Compute the covariances for each component."""
         if theta is not None:

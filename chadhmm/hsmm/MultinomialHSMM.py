@@ -1,8 +1,10 @@
 import torch
 from torch.distributions import Multinomial
+from typing import Optional
 
 from chadhmm.hsmm.BaseHSMM import BaseHSMM
-from chadhmm.utilities import constraints, utils
+from chadhmm.utils import constraints
+from chadhmm.schemas import ContextualVariables
 
 
 class MultinomialHSMM(BaseHSMM):
@@ -48,7 +50,7 @@ class MultinomialHSMM(BaseHSMM):
         max_duration: int,
         n_trials: int = 1,
         alpha: float = 1.0,
-        seed: int | None = None,
+        seed: Optional[int] = None,
     ):
         self.n_features = n_features
         self.n_trials = n_trials
@@ -77,7 +79,7 @@ class MultinomialHSMM(BaseHSMM):
         self,
         X: torch.Tensor,
         posterior: torch.Tensor,
-        theta: utils.ContextualVariables | None = None,
+        theta: Optional[ContextualVariables] = None,
     ) -> torch.Tensor:
         """Compute the emission probabilities for each hidden state."""
         if theta is not None:

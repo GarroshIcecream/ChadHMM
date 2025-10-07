@@ -10,9 +10,27 @@ I'm not a professional programmer, I'm just a guy who likes to code.
 If you have any suggestions, please let me know. I'm open to all ideas.
 """
 
-from .hmm import GaussianHMM, GaussianMixtureHMM, MultinomialHMM, PoissonHMM
-from .hsmm import GaussianHSMM, GaussianMixtureHSMM, MultinomialHSMM, PoissonHSMM
-from .utilities import ConvergenceHandler, SeedGenerator, constraints, utils
+from .hmm import (
+    GaussianHMM, 
+    GaussianMixtureHMM, 
+    MultinomialHMM, 
+    PoissonHMM
+)
+from .hsmm import (
+    GaussianHSMM, 
+    GaussianMixtureHSMM, 
+    MultinomialHSMM, 
+    PoissonHSMM
+)
+from .schemas import (
+    Observations, 
+    ContextualVariables, 
+    DecodingAlgorithm, 
+    InformCriteria, 
+    Transitions, 
+    CovarianceType
+)
+from .utils import ConvergenceHandler, SeedGenerator
 
 __all__ = [
     "MultinomialHMM",
@@ -23,7 +41,12 @@ __all__ = [
     "PoissonHSMM",
     "GaussianMixtureHMM",
     "GaussianMixtureHSMM",
-    "utils",
+    "Observations",
+    "ContextualVariables",
+    "DecodingAlgorithm",
+    "InformCriteria",
+    "Transitions",
+    "CovarianceType",
     "constraints",
     "SeedGenerator",
     "ConvergenceHandler",

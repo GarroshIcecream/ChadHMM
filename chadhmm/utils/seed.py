@@ -1,9 +1,10 @@
 import torch
+from typing import Optional
 
 
 class SeedGenerator:
-    def __init__(self, seed: int | None = None):
-        if seed is not None:
+    def __init__(self, seed: Optional[int] = None):
+        if seed:
             self.seed_gen = torch.random.manual_seed(seed)
         else:
             initial_seed = torch.random.seed()

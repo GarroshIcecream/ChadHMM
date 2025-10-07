@@ -1,21 +1,26 @@
 # Chad Hidden Markov Models (ChadHMM)
-[![GitHub license](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/drkostas/pyemail-sender/master/LICENSE)
-![Downloads](https://img.shields.io/pypi/dm/chadhmm?color=purple)
 
-> **NOTE:**
-> This package is still in its early stages, documentation might not reflect every method mentioned above, please feel free to contribute and make this more coherent.
+<div align="center">
+  <img src="./assets/chadhmm_logo.svg" alt="ChadHMM Logo" width="300" />
+  
+
+  [![chadhmm](https://badge.fury.io/py/chadhmm.svg)](https://badge.fury.io/py/chadhmm)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/GarroshIcecream/ChadHMM/blob/master/LICENSE)
+  [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+  ![Downloads](https://img.shields.io/pypi/dm/chadhmm?color=purple)
+  ![Development Status](https://img.shields.io/badge/status-beta-orange.svg)
+  [![CI](https://github.com/GarroshIcecream/ChadHMM/actions/workflows/ci.yml/badge.svg)](https://github.com/GarroshIcecream/ChadHMM/actions/workflows/ci.yml)
+  [![Release](https://github.com/GarroshIcecream/ChadHMM/actions/workflows/release.yml/badge.svg)](https://github.com/GarroshIcecream/ChadHMM/actions/workflows/release.yml)
+</div>
 
 ## Table of Contents
 
 - [Chad Hidden Markov Models (ChadHMM)](#chad-hidden-markov-models-chadhmm)
-  - [Table of Contents](#table-of-contents)
-  - [About ](#about-)
-  - [Getting Started ](#getting-started-)
-  - [Usage ](#usage-)
-  - [Roadmap ](#roadmap-)
-  - [Unit Tests ](#unit-tests-)
-  - [References ](#references-)
-  - [License ](#license-)
+  - [About](#about)
+  - [Getting Started](#getting-started)
+  - [Usage](#usage)
+  - [Roadmap](#roadmap)
+  - [References](#references)
 
 ## About <a name = "about"></a>
 
@@ -35,7 +40,7 @@ To get a local copy up and running follow these simple example steps.
 # Using pip
 $ pip install chadhmm
 
-# Using uv (faster)
+# Using uv
 $ uv add chadhmm
 ```
 
@@ -48,18 +53,8 @@ $ uv add chadhmm
 
 2. Install dependencies and the package in development mode
    ```bash
-   # Using uv (recommended)
-   $ uv sync
-   $ uv run python -c "import chadhmm; print('Installation successful!')"
-   
-   # Or using pip
-   $ pip install -e .
+   $ uv sync --dev
    ```
-
-### Prerequisites
-
-- Python 3.10 or higher
-- [uv](https://docs.astral.sh/uv/) (recommended for development) or pip
 
 ## Usage <a name = "usage"></a>
 
@@ -68,7 +63,7 @@ Please refer to the [docs](https://github.com/GarroshIcecream/ChadHMM//tree/mast
 See below example of training and inference using `MultinomialHMM`:
 ```python
 from chadhmm import MultinomialHMM
-from chadhmm.utilities import constraints
+from chadhmm.schemas import Transitions, InformCriteria
 import torch
 
 # Initialize Multinomial HMM with 6 states and 4 emissions
@@ -76,7 +71,7 @@ hmm = MultinomialHMM(
   n_states=6,
   n_features=4,
   n_trials=2,
-  transitions=constraints.Transitions.ERGODIC
+  transitions=Transitions.ERGODIC
 )
 
 # Mock the example data and one hot encode
@@ -99,7 +94,7 @@ print(log_likes)
 ics = hmm.ic(
   one_hot,
   lengths=[400,500,100],
-  criterion=constraints.InformCriteria.AIC
+  criterion=InformCriteria.AIC
 )
 print(ics)
 
@@ -139,11 +134,7 @@ See the [open issues](https://github.com/GarroshIcecream/ChadHMM/issues) for a f
 If you want to run the unit tests, execute the following command:
 
 ```bash
-# Using uv (recommended)
 $ uv run pytest
-
-# Or using pip
-$ python -m pytest tests/
 ```
 
 ## References <a name = "references"></a>
@@ -158,11 +149,3 @@ Implementations are based on:
 
 - Contextual HMM and HSMM:
   - ["Contextual Hidden Markov Models"](https://www.researchgate.net/publication/261490802_Contextual_Hidden_Markov_Models) by Thierry Artieres from Ecole Centrale de Marseille
-
-## License <a name = "license"></a>
-
-This project is licensed under the MIT License - see
-the [LICENSE](https://github.com/GarroshIcecream/ChadHMM/blob/master/LICENSE) file for details.
-
-
-<a href="https://www.buymeacoffee.com/adpesek13n" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
