@@ -66,10 +66,6 @@ class GaussianMixtureHMM(BaseHMM):
         super().__init__(n_states, transitions, alpha, seed)
 
     @property
-    def pdf(self) -> MixtureSameFamily:
-        return self._params.emission_pdf
-
-    @property
     def dof(self):
         return (
             self.n_states**2

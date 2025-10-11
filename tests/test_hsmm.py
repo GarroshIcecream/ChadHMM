@@ -89,20 +89,27 @@ class TestMultinomialHSMM(unittest.TestCase):
             X=self.X_one_hot, lengths=self.lengths, max_iter=5, n_init=1, verbose=False
         )
 
-        # Test MAP prediction (Viterbi not implemented yet)
+        # Test MAP prediction
         map_path = self.hsmm.predict(
             X=self.X_one_hot, lengths=self.lengths, algorithm=DecodingAlgorithm.MAP
         )
         self.assertIsInstance(map_path, list)
         self.assertEqual(len(map_path), len(self.lengths))
 
-        # Test that Viterbi raises NotImplementedError
-        with self.assertRaises(NotImplementedError):
-            self.hsmm.predict(
-                X=self.X_one_hot,
-                lengths=self.lengths,
-                algorithm=DecodingAlgorithm.VITERBI,
-            )
+        # Test Viterbi prediction
+        viterbi_path = self.hsmm.predict(
+            X=self.X_one_hot,
+            lengths=self.lengths,
+            algorithm=DecodingAlgorithm.VITERBI,
+        )
+        self.assertIsInstance(viterbi_path, list)
+        self.assertEqual(len(viterbi_path), len(self.lengths))
+        # Check that each sequence has the correct length
+        for i, length in enumerate(self.lengths):
+            self.assertEqual(viterbi_path[i].shape[0], length)
+            # Check that all states are valid (between 0 and n_states-1)
+            self.assertTrue(torch.all(viterbi_path[i] >= 0))
+            self.assertTrue(torch.all(viterbi_path[i] < self.n_states))
 
     def test_score_method(self):
         """Test scoring methods."""
@@ -243,11 +250,18 @@ class TestGaussianHSMM(unittest.TestCase):
         self.assertIsInstance(predictions, list)
         self.assertEqual(len(predictions), len(self.lengths))
 
-        # Test that Viterbi raises NotImplementedError
-        with self.assertRaises(NotImplementedError):
-            self.hsmm.predict(
-                X=self.X, lengths=self.lengths, algorithm=DecodingAlgorithm.VITERBI
-            )
+        # Test Viterbi prediction
+        viterbi_predictions = self.hsmm.predict(
+            X=self.X, lengths=self.lengths, algorithm=DecodingAlgorithm.VITERBI
+        )
+        self.assertIsInstance(viterbi_predictions, list)
+        self.assertEqual(len(viterbi_predictions), len(self.lengths))
+        # Check that each sequence has the correct length
+        for i, length in enumerate(self.lengths):
+            self.assertEqual(viterbi_predictions[i].shape[0], length)
+            # Check that all states are valid
+            self.assertTrue(torch.all(viterbi_predictions[i] >= 0))
+            self.assertTrue(torch.all(viterbi_predictions[i] < self.n_states))
 
 
 class TestGaussianMixtureHSMM(unittest.TestCase):
@@ -295,11 +309,18 @@ class TestGaussianMixtureHSMM(unittest.TestCase):
         self.assertIsInstance(predictions, list)
         self.assertEqual(len(predictions), len(self.lengths))
 
-        # Test that Viterbi raises NotImplementedError
-        with self.assertRaises(NotImplementedError):
-            self.hsmm.predict(
-                X=self.X, lengths=self.lengths, algorithm=DecodingAlgorithm.VITERBI
-            )
+        # Test Viterbi prediction
+        viterbi_predictions = self.hsmm.predict(
+            X=self.X, lengths=self.lengths, algorithm=DecodingAlgorithm.VITERBI
+        )
+        self.assertIsInstance(viterbi_predictions, list)
+        self.assertEqual(len(viterbi_predictions), len(self.lengths))
+        # Check that each sequence has the correct length
+        for i, length in enumerate(self.lengths):
+            self.assertEqual(viterbi_predictions[i].shape[0], length)
+            # Check that all states are valid
+            self.assertTrue(torch.all(viterbi_predictions[i] >= 0))
+            self.assertTrue(torch.all(viterbi_predictions[i] < self.n_states))
 
 
 class TestPoissonHSMM(unittest.TestCase):
@@ -343,11 +364,18 @@ class TestPoissonHSMM(unittest.TestCase):
         self.assertIsInstance(predictions, list)
         self.assertEqual(len(predictions), len(self.lengths))
 
-        # Test that Viterbi raises NotImplementedError
-        with self.assertRaises(NotImplementedError):
-            self.hsmm.predict(
-                X=self.X, lengths=self.lengths, algorithm=DecodingAlgorithm.VITERBI
-            )
+        # Test Viterbi prediction
+        viterbi_predictions = self.hsmm.predict(
+            X=self.X, lengths=self.lengths, algorithm=DecodingAlgorithm.VITERBI
+        )
+        self.assertIsInstance(viterbi_predictions, list)
+        self.assertEqual(len(viterbi_predictions), len(self.lengths))
+        # Check that each sequence has the correct length
+        for i, length in enumerate(self.lengths):
+            self.assertEqual(viterbi_predictions[i].shape[0], length)
+            # Check that all states are valid
+            self.assertTrue(torch.all(viterbi_predictions[i] >= 0))
+            self.assertTrue(torch.all(viterbi_predictions[i] < self.n_states))
 
 
 class TestHSMMTransitions(unittest.TestCase):

@@ -1,59 +1,115 @@
 import torch
 from torch.distributions import Multinomial
 
+from chadhmm.distributions.base import BaseDistribution
 from chadhmm.schemas import ContextualVariables
 from chadhmm.utils import constraints
 
 
-class MultinomialDist(Multinomial):
-    def __init__(self, logits: torch.Tensor, trials: int = 1):
-        super().__init__(total_count=trials, logits=logits)
+class MultinomialDistribution(Multinomial, BaseDistribution):
+    """
+    Multinomial distribution for HMM/HSMM models.
+
+    Handles categorical, binomial, and multinomial emissions.
+    - If n_trials=1 and n_features=2: Bernoulli
+    - If n_trials=1 and n_features>2: Categorical
+    - If n_trials>1 and n_features=2: Binomial
+    - If n_trials>1 and n_features>2: Multinomial
+
+    Parameters:
+    ----------
+    logits : torch.Tensor
+        Log probabilities of shape (n_states, n_features).
+    n_trials : int
+        Number of trials for the multinomial distribution.
+    """
+
+    def __init__(self, logits: torch.Tensor, n_trials: int = 1):
+        self.n_trials = n_trials
+        super().__init__(total_count=n_trials, logits=logits)
 
     @property
-    def dof(self):
-        return self.batch_shape * (self.event_shape - 1)
+    def dof(self) -> int:
+        """
+        Degrees of freedom: (n_states * n_features) - n_states
+        We subtract n_states because probabilities in each row must sum to 1.
+        """
+        n_states, n_features = self.logits.shape
+        return n_states * n_features - n_states
 
     @classmethod
-    def sample_emission_pdf(
+    def sample_distribution(
         cls,
-        trials: int,
-        batch_shape: int,
-        event_shape: int,
-        alpha: float = 1.0,
+        n_components: int,
+        n_features: int,
         X: torch.Tensor | None = None,
-    ):
-        if X:
-            emission_freqs = torch.bincount(X) / X.shape[0]
-            emission_matrix = torch.log(emission_freqs.expand(batch_shape, -1))
+        n_trials: int = 1,
+        alpha: float = 1.0,
+    ) -> "MultinomialDistribution":
+        """
+        Sample a multinomial distribution.
+
+        If X is provided, initialize from empirical frequencies.
+        Otherwise, sample from Dirichlet prior.
+        """
+        if X is not None:
+            # Initialize from data frequencies
+            emission_freqs = torch.bincount(X.long(), minlength=n_features) / X.shape[0]
+            emission_matrix = torch.log(emission_freqs.expand(n_components, -1).clone())
         else:
+            # Sample from Dirichlet
             emission_matrix = torch.log(
-                constraints.sample_probs(alpha, (batch_shape, event_shape))
+                constraints.sample_probs(alpha, (n_components, n_features))
             )
 
-        return cls(emission_matrix, trials)
+        return cls(logits=emission_matrix, n_trials=n_trials)
 
-    def _estimate_emission_pdf(
-        self,
+    @classmethod
+    def from_posterior_distribution(
+        cls,
         X: torch.Tensor,
         posterior: torch.Tensor,
+        n_trials: int = 1,
         theta: ContextualVariables | None = None,
-    ):
-        self.logits = torch.log(self._compute_B(X, posterior, theta))
+    ) -> "MultinomialDistribution":
+        """
+        Estimate emission probabilities from data and posterior.
 
-    def _compute_B(
-        self,
-        X: torch.Tensor,
-        posterior: torch.Tensor,
-        theta: ContextualVariables | None = None,
-    ) -> torch.Tensor:
-        """Compute the emission probabilities for each hidden state."""
-        if theta:
-            # TODO: Implement contextualized emissions
+        Parameters:
+        -----------
+        X : torch.Tensor
+            Observed data
+        posterior : torch.Tensor
+            Posterior probabilities of shape (n_samples, n_states)
+        n_trials : int
+            Number of trials
+        theta : ContextualVariables | None
+            Contextual variables (not yet supported)
+
+        Returns:
+        --------
+        MultinomialDistribution
+            Estimated multinomial distribution
+        """
+        if theta is not None:
             raise NotImplementedError(
-                "Contextualized emissions not implemented for MultinomialEmissions"
+                "Contextualized emissions not implemented for MultinomialDistribution"
             )
-        else:
-            new_B = posterior.T @ X
-            new_B /= posterior.T.sum(1, keepdim=True)
 
-        return new_B
+        new_B = posterior.T @ X
+        new_B /= posterior.T.sum(1, keepdim=True)
+
+        return cls(logits=torch.log(new_B), n_trials=n_trials)
+
+    def _update_posterior(
+        self,
+        X: torch.Tensor,
+        posterior: torch.Tensor,
+        theta: ContextualVariables | None = None,
+    ) -> None:
+        if theta is not None:
+            raise NotImplementedError(
+                "Contextualized emissions not implemented for MultinomialDistribution"
+            )
+
+        self.logits = torch.log(posterior.T @ X / posterior.T.sum(1, keepdim=True))

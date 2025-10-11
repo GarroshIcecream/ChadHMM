@@ -3,8 +3,13 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical, Distribution
+from torch.distributions import Distribution
 
+from chadhmm.distributions import (
+    DurationDistribution,
+    InitialDistribution,
+    TransitionMatrix,
+)
 from chadhmm.schemas import (
     ContextualVariables,
     DecodingAlgorithm,
@@ -123,9 +128,11 @@ class BaseHSMM(nn.Module, ABC):
 
         return nn.ParameterDict(
             {
-                "pi": Categorical(logits=sampled_pi),
-                "A": Categorical(logits=sampled_A),
-                "D": Categorical(logits=sampled_D),
+                "pi": InitialDistribution(logits=sampled_pi),
+                "A": TransitionMatrix(
+                    logits=sampled_A, transition_type=Transitions.SEMI
+                ),
+                "D": DurationDistribution(logits=sampled_D),
                 "emission_pdf": self.sample_emission_pdf(X),
             }
         )
@@ -269,12 +276,11 @@ class BaseHSMM(nn.Module, ABC):
     ) -> list[torch.Tensor]:
         """Predict the most likely sequence of hidden states"""
         X_valid = self.to_observations(X, lengths)
-        if algorithm == DecodingAlgorithm.MAP:
-            decoded_path = self._map(X_valid)
-        elif algorithm == DecodingAlgorithm.VITERBI:
-            decoded_path = self._viterbi(X_valid)
-        else:
-            raise ValueError(f"Unknown decoder algorithm {algorithm}")
+        match algorithm:
+            case DecodingAlgorithm.MAP:
+                decoded_path = self._map(X_valid)
+            case DecodingAlgorithm.VITERBI:
+                decoded_path = self._viterbi(X_valid)
 
         return decoded_path
 
@@ -411,17 +417,140 @@ class BaseHSMM(nn.Module, ABC):
 
         return nn.ParameterDict(
             {
-                "pi": Categorical(logits=new_pi),
-                "A": Categorical(logits=new_A),
-                "D": Categorical(logits=new_D),
+                "pi": InitialDistribution(logits=new_pi),
+                "A": TransitionMatrix(logits=new_A, transition_type=Transitions.SEMI),
+                "D": DurationDistribution(logits=new_D),
                 "emission_pdf": new_pdf,
             }
         )
 
-    # TODO: Implement Viterbi algorithm
+    @staticmethod
+    @torch.jit.script
+    def _viterbi_jit(
+        n_states: int,
+        max_duration: int,
+        log_probs: torch.Tensor,
+        A: torch.Tensor,
+        pi: torch.Tensor,
+        D: torch.Tensor,
+    ) -> torch.Tensor:
+        """JIT-compiled Viterbi algorithm implementation for HSMM.
+
+        Reference: Similar to the C++ implementation in hsmmlearn and the algorithm
+        described in Yu (2010) "Hidden semi-Markov models"
+
+        Args:
+            n_states: Number of hidden states
+            max_duration: Maximum duration for any state
+            log_probs: Log emission probabilities of shape (seq_len, n_states)
+            A: Log transition matrix of shape (n_states, n_states)
+            pi: Log initial state distribution of shape (n_states,)
+            D: Log duration distributions of shape (n_states, max_duration)
+
+        Returns:
+            torch.Tensor: Most likely state sequence of shape (seq_len,)
+        """
+        seq_len = log_probs.shape[0]
+
+        # alpha[t, j] = max log probability of ending in state j at time t
+        alpha = torch.full(
+            size=(seq_len, n_states),
+            fill_value=float("-inf"),
+            dtype=torch.float64,
+            device=log_probs.device,
+        )
+
+        # maxU[t, j] = duration that achieved maximum at (t, j)
+        maxU = torch.zeros(
+            size=(seq_len, n_states),
+            dtype=torch.int64,
+            device=log_probs.device,
+        )
+
+        # maxI[t, j] = previous state that achieved maximum at (t, j)
+        maxI = torch.zeros(
+            size=(seq_len, n_states),
+            dtype=torch.int64,
+            device=log_probs.device,
+        )
+
+        # Forward pass
+        for t in range(seq_len):
+            for j in range(n_states):
+                # Consider all possible durations u that could end at time t
+                max_val = float("-inf")
+                best_u = 0
+                best_i = 0
+
+                for u in range(1, min(t + 1, max_duration) + 1):
+                    # Accumulate observations over duration
+                    obs_sum = torch.sum(log_probs[t - u + 1 : t + 1, j])
+
+                    if u <= t:
+                        # Transition from previous state i to current state j
+                        for i in range(n_states):
+                            if i != j:  # Semi-Markov: no self-transitions
+                                val = alpha[t - u, i] + A[i, j] + D[j, u - 1] + obs_sum
+                                if val > max_val:
+                                    max_val = val
+                                    best_u = u
+                                    best_i = i
+                    else:
+                        # Initial state (duration spans from start)
+                        val = pi[j] + D[j, u - 1] + obs_sum
+                        if val > max_val:
+                            max_val = val
+                            best_u = u
+                            best_i = -1  # -1 indicates initial state
+
+                alpha[t, j] = max_val
+                maxU[t, j] = best_u
+                maxI[t, j] = best_i
+
+        # Termination: find best final state
+        best_final_val = float("-inf")
+        best_final_state = 0
+        for j in range(n_states):
+            if alpha[seq_len - 1, j] > best_final_val:
+                best_final_val = alpha[seq_len - 1, j]
+                best_final_state = j
+
+        # Backtracking
+        path = torch.zeros(seq_len, dtype=torch.int64, device=log_probs.device)
+        t = seq_len - 1
+        current_state = best_final_state
+
+        while t >= 0:
+            duration = int(maxU[t, current_state])
+            prev_state_idx = int(maxI[t, current_state])
+
+            # Fill in the current state for its duration
+            start_idx = max(0, t - duration + 1)
+            for i in range(start_idx, t + 1):
+                path[i] = current_state
+
+            # Move to previous state
+            t = t - duration
+            if prev_state_idx >= 0:
+                current_state = prev_state_idx
+            # else: we've reached the initial state
+
+        return path
+
     def _viterbi(self, X: Observations) -> list[torch.Tensor]:
-        """Viterbi algorithm for decoding the most likely sequence of hidden states."""
-        raise NotImplementedError("Viterbi algorithm not yet implemented for HSMM")
+        """Viterbi algorithm for decoding the most likely sequence of hidden states.
+
+        This implementation accounts for explicit state durations characteristic of
+        HSMMs, finding the most likely sequence of states and their durations.
+        """
+        viterbi_vec = []
+        for log_probs in X.log_probs:
+            viterbi_path = self._viterbi_jit(
+                self.n_states, self.max_duration, log_probs, self.A, self.pi, self.D
+            )
+            viterbi_vec.append(viterbi_path)
+
+        return viterbi_vec
 
     def _map(self, X: Observations) -> list[torch.Tensor]:
         """Compute the most likely (MAP) sequence of indiviual hidden states."""

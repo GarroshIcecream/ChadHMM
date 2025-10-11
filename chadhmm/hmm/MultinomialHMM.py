@@ -1,107 +1,85 @@
-import torch
-from torch.distributions import Multinomial
-
+from chadhmm.distributions import MultinomialDistribution
 from chadhmm.hmm.BaseHMM import BaseHMM
-from chadhmm.schemas import ContextualVariables, Transitions
-from chadhmm.utils import constraints
+from chadhmm.schemas import Transitions
 
 
 class MultinomialHMM(BaseHMM):
     """
-    Multinomial Hidden Markov Model (HMM)
-    ----------
-    Hidden Markov model with multinomial (discrete) emissions. This model is a
-    special case of the HSMM model with a geometric duration distribution.
+    Multinomial Hidden Markov Model using composition pattern.
 
-    If n_trials = 1 and and n_features = 2
-        Bernoulli distribution
-    If n_trials = 1 and and n_features > 2
-        Categorical distribution
-    If n_trials > 1 and and n_features = 2
-        Binomial distribution
-    If n_trials > 1 and and n_features > 2
-        Multionomial distribution
+    Hidden Markov model with multinomial (discrete) emissions.
+
+    Special cases:
+    - If n_trials=1 and n_features=2: Bernoulli distribution
+    - If n_trials=1 and n_features>2: Categorical distribution
+    - If n_trials>1 and n_features=2: Binomial distribution
+    - If n_trials>1 and n_features>2: Multinomial distribution
 
     Parameters:
     ----------
-    n_states (int):
-        Number of hidden states in the model. Defines shape of Transition
-        Matrix (n_states,n_states)
-    n_features (int):
-        Number of emissions in the model. Defines the shape of Emisison
-        Matrix (n_states,n_features)
-    n_trials (int):
-        Number of trials in the model
-    transitions (Transitions)
-        Represents the type of the transition matrix in HMM
-            If 'ergodic'
-                all states must be reachable from any state
-            If 'left-to-right'
-                may only transition to current or next state - remains in last
-                state if reached
-    alpha (float):
+    n_states : int
+        Number of hidden states in the model.
+    n_features : int
+        Number of possible emission values (categories).
+    n_trials : int
+        Number of trials in the multinomial distribution.
+    alpha : float
         Dirichlet concentration parameter for the prior over initial
-        distribution, transition amd emission probabilities.
-            Default to 1 thus samples from Uniform distribution
-    seed (int):
+        distribution, transition and emission probabilities.
+    seed : int | None
         Random seed for reproducibility.
+
+    Example:
+    --------
+    >>> # Categorical emissions (n_trials=1)
+    >>> model = MultinomialHMM(n_states=3, n_features=5, n_trials=1)
+    >>> model.fit(X)
+    >>> predictions = model.predict(X, algorithm='viterbi')
     """
 
     def __init__(
         self,
         n_states: int,
         n_features: int,
-        transitions: Transitions,
+        transitions=None,  # For backward compatibility
         n_trials: int = 1,
         alpha: float = 1.0,
         seed: int | None = None,
     ):
+        # Store parameters needed for distribution initialization
         self.n_features = n_features
         self.n_trials = n_trials
-        super().__init__(n_states, transitions, alpha, seed)
 
-    @property
-    def pdf(self) -> Multinomial:
-        return self._params.emission_pdf
+        # Handle transitions parameter (backward compatibility)
+        if transitions is None:
+            transitions = Transitions.ERGODIC
 
-    @property
-    def dof(self):
-        return self.n_states**2 + self.n_states * self.n_features - self.n_states - 1
+        # Create initial emission distribution
+        emission_dist = MultinomialDistribution.sample_distribution(
+            n_components=n_states,
+            n_features=n_features,
+            X=None,
+            n_trials=n_trials,
+            alpha=alpha,
+        )
 
-    def sample_emission_pdf(self, X: torch.Tensor | None = None) -> Multinomial:
-        if X is not None:
-            emission_freqs = torch.bincount(X) / X.shape[0]
-            emission_matrix = torch.log(emission_freqs.expand(self.n_states, -1))
-        else:
-            emission_matrix = torch.log(
-                constraints.sample_probs(self.alpha, (self.n_states, self.n_features))
-            )
+        # Initialize BaseHMM with the emission distribution
+        super().__init__(
+            n_states=n_states,
+            emission_dist=emission_dist,
+            alpha=alpha,
+            transitions=transitions,
+            seed=seed,
+        )
 
-        return Multinomial(total_count=self.n_trials, logits=emission_matrix)
+    def __str__(self) -> str:
+        """Returns a string representation of the model."""
+        return (
+            f"MultinomialHMM(n_states={self.n_states}, "
+            f"n_features={self.n_features}, "
+            f"n_trials={self.n_trials})"
+        )
 
-    def _estimate_emission_pdf(
-        self,
-        X: torch.Tensor,
-        posterior: torch.Tensor,
-        theta: ContextualVariables | None = None,
-    ):
-        new_B = torch.log(self._compute_B(X, posterior, theta))
-        return Multinomial(total_count=self.n_trials, logits=new_B)
-
-    def _compute_B(
-        self,
-        X: torch.Tensor,
-        posterior: torch.Tensor,
-        theta: ContextualVariables | None = None,
-    ) -> torch.Tensor:
-        """Compute the emission probabilities for each hidden state."""
-        if theta is not None:
-            # TODO: Implement contextualized emissions
-            raise NotImplementedError(
-                "Contextualized emissions not implemented for MultinomialEmissions"
-            )
-        else:
-            new_B = posterior.T @ X
-            new_B /= posterior.T.sum(1, keepdim=True)
-
-        return new_B
+    def __repr__(self) -> str:
+        """Returns a detailed representation of the model."""
+        return self.__str__()

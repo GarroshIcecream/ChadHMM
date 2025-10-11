@@ -2,24 +2,24 @@ from enum import Enum
 
 
 class Transitions(Enum):
-    SEMI = "semi"
-    ERGODIC = "ergodic"
-    LEFT_TO_RIGHT = "left-to-right"
+    SEMI = "Semi-Markov"
+    ERGODIC = "Ergodic"
+    LEFT_TO_RIGHT = "Left-to-Right"
 
 
 class InformCriteria(Enum):
-    AIC = "AIC"
-    BIC = "BIC"
-    HQC = "HQC"
+    AIC = "Akaike Information Criteria"
+    BIC = "Bayesian Information Criteria"
+    HQC = "Hannan-Quinn Information Criteria"
 
 
 class CovarianceType(Enum):
-    FULL = "full"
-    DIAG = "diag"
-    TIED = "tied"
-    SPHERICAL = "spherical"
+    FULL = "Full"
+    DIAG = "Diagonal"
+    TIED = "Tied"
+    SPHERICAL = "Spherical"
 
 
 class DecodingAlgorithm(Enum):
-    VITERBI = "viterbi"
-    MAP = "map"
+    VITERBI = "Viterbi"
+    MAP = "MAP"

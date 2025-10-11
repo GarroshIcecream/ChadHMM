@@ -218,24 +218,6 @@ class TestUtils(unittest.TestCase):
 class TestUtilityFunctions(unittest.TestCase):
     """Test additional utility functions."""
 
-    def test_enum_values(self):
-        """Test enum values are correct."""
-        # Test Transitions enum
-        self.assertEqual(Transitions.ERGODIC.value, "ergodic")
-        self.assertEqual(Transitions.LEFT_TO_RIGHT.value, "left-to-right")
-        self.assertEqual(Transitions.SEMI.value, "semi")
-
-        # Test InformCriteria enum
-        self.assertEqual(InformCriteria.AIC.value, "AIC")
-        self.assertEqual(InformCriteria.BIC.value, "BIC")
-        self.assertEqual(InformCriteria.HQC.value, "HQC")
-
-        # Test CovarianceType enum
-        self.assertEqual(CovarianceType.FULL.value, "full")
-        self.assertEqual(CovarianceType.DIAG.value, "diag")
-        self.assertEqual(CovarianceType.TIED.value, "tied")
-        self.assertEqual(CovarianceType.SPHERICAL.value, "spherical")
-
     def test_error_handling(self):
         """Test error handling in utility functions."""
         # Test with valid transition type

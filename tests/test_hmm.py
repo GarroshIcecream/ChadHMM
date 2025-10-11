@@ -338,7 +338,7 @@ class TestHMMTransitions(unittest.TestCase):
             n_states=3, n_features=4, transitions=constraints.Transitions.ERGODIC
         )
 
-        A = hmm.A.exp()
+        A = hmm.A.probs
         # All transitions should be possible
         self.assertTrue(torch.all(A > 0))
 
@@ -348,7 +348,7 @@ class TestHMMTransitions(unittest.TestCase):
             n_states=3, n_features=4, transitions=constraints.Transitions.LEFT_TO_RIGHT
         )
 
-        A = hmm.A.exp()
+        A = hmm.A.probs
         # Should be upper triangular
         self.assertTrue(torch.all(torch.tril(A, diagonal=-1) == 0))
 
@@ -358,7 +358,7 @@ class TestHMMTransitions(unittest.TestCase):
             n_states=3, n_features=4, transitions=constraints.Transitions.SEMI
         )
 
-        A = hmm.A.exp()
+        A = hmm.A.probs
         # Diagonal should be zero
         self.assertTrue(torch.all(torch.diag(A) == 0))
 

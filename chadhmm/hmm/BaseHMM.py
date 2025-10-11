@@ -1,10 +1,13 @@
-from abc import ABC, abstractmethod
-from typing import Any, TypeVar
+from typing import TypeVar
 
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical, Distribution
 
+from chadhmm.distributions import (
+    BaseDistribution,
+    InitialDistribution,
+    TransitionMatrix,
+)
 from chadhmm.schemas import (
     ContextualVariables,
     DecodingAlgorithm,
@@ -17,99 +20,97 @@ from chadhmm.utils import ConvergenceHandler, SeedGenerator, constraints
 T = TypeVar("T", bound="BaseHMM")
 
 
-class BaseHMM(nn.Module, ABC):
+class BaseHMM(nn.Module):
     """
-    Base Abstract Class for HMM
-    ----------
-    Base Class of Hidden Markov Models (HMM) class that provides a foundation
-    for building specific HMM models.
-    """
+    Base Class for HMM using composition pattern.
 
-    __slots__ = "n_states", "params"
+    This class implements the Hidden Markov Model framework and delegates
+    emission distribution handling to a BaseDistribution instance.
+
+    Parameters:
+    ----------
+    n_states : int
+        Number of hidden states in the model.
+    emission_dist : BaseDistribution
+        An instance of a distribution class (e.g., GaussianDistribution,
+        MultinomialDistribution, PoissonDistribution).
+    alpha : float
+        Dirichlet concentration parameter for priors.
+    seed : int | None
+        Random seed for reproducibility.
+    """
 
     def __init__(
         self,
         n_states: int,
-        transitions: Transitions,
-        alpha: float,
+        emission_dist: BaseDistribution,
+        alpha: float = 1.0,
+        transitions: Transitions = Transitions.ERGODIC,
         seed: int | None = None,
-        device: torch.device | None = None,
     ):
         super().__init__()
         self.n_states = n_states
-        self.alpha = alpha
         self._seed_gen = SeedGenerator(seed)
+        self.alpha = alpha
+        self.emission_dist = emission_dist
         self._A_type = transitions
-        self._device = device if device is not None else torch.device("cpu")
         self._params = self.sample_model_params()
-
-    @property
-    def device(self) -> torch.device:
-        """Get current device of model parameters."""
-        return self._device
 
     @property
     def seed(self) -> int:
         return self._seed_gen.seed
 
     @property
-    def A(self) -> torch.Tensor:
-        return self._params.A.logits
+    def A(self) -> TransitionMatrix:
+        return self._params.A
 
     @A.setter
-    def A(self, logits: torch.Tensor):
-        assert (o := self.A.shape) == (f := logits.shape), ValueError(
+    def A(self, value: TransitionMatrix):
+        assert (o := self.A.param_shape) == (f := value.param_shape), ValueError(
             f"Expected shape {o} but got {f}"
         )
-        assert torch.allclose(logits.logsumexp(1), torch.ones(o)), ValueError(
-            "Probs do not sum to 1"
-        )
-        assert constraints.is_valid_A(logits, self._A_type), ValueError(
-            f"Transition Matrix is not satisfying the constraints given by its type "
-            f"{self._A_type}"
-        )
-        self._params.A.logits = logits
+        self._params.A = value
 
     @property
-    def pi(self) -> torch.Tensor:
-        return self._params.pi.logits
+    def pi(self) -> InitialDistribution:
+        return self._params.pi
 
     @pi.setter
-    def pi(self, logits: torch.Tensor):
-        assert (o := self.pi.shape) == (f := logits.shape), ValueError(
+    def pi(self, value: InitialDistribution):
+        assert (o := self.pi.param_shape) == (f := value.param_shape), ValueError(
             f"Expected shape {o} but got {f}"
         )
-        assert torch.allclose(logits.logsumexp(0), torch.ones(o)), ValueError(
-            "Probs do not sum to 1"
-        )
-        self._params.pi.logits = logits
+        self._params.pi = value
 
     @property
-    @abstractmethod
-    def pdf(self) -> Any:
-        pass
+    def pdf(self) -> BaseDistribution:
+        return self._params.emission_pdf
+
+    @pdf.setter
+    def pdf(self, value: BaseDistribution):
+        self._params.emission_pdf = value
 
     @property
-    @abstractmethod
+    def params(self) -> nn.ParameterDict:
+        return self._params
+
+    @params.setter
+    def params(self, params: nn.ParameterDict):
+        self._params.update(params)
+
+    @property
     def dof(self) -> int:
-        """Returns the degrees of freedom of the model."""
-        pass
+        """
+        Returns the degrees of freedom of the model.
 
-    @abstractmethod
-    def _estimate_emission_pdf(
-        self,
-        X: torch.Tensor,
-        posterior: torch.Tensor,
-        theta: ContextualVariables | None = None,
-    ) -> Distribution:
-        """Update the emission parameters where posterior is of shape
-        (n_states,n_samples)"""
-        pass
-
-    @abstractmethod
-    def sample_emission_pdf(self, X: torch.Tensor | None = None) -> Distribution:
-        """Sample the emission parameters."""
-        pass
+        Total DOF = HMM structure DOF + Emission distribution DOF
+        HMM structure DOF = (n_states^2 - 1) for transition matrix +
+                           (n_states - 1) for initial distribution
+                         = n_states^2 - 1
+        """
+        hmm_dof = self.n_states**2 - 1
+        emission_dof = self.emission_dist.dof
+        return hmm_dof + emission_dof
 
     def save_model(self, file_path: str) -> None:
         """Save the model's state dictionary to a file."""
@@ -119,22 +120,6 @@ class BaseHMM(nn.Module, ABC):
         """Load the model's state dictionary from a file."""
         self.load_state_dict(torch.load(file_path))
         self.eval()
-
-    def to(self, device: str | torch.device) -> T:
-        """Move model to specified device (CPU/GPU).
-
-        Args:
-            device: Target device ('cpu', 'cuda', or torch.device)
-        """
-        if isinstance(device, str):
-            device = torch.device(device)
-
-        self._device = device
-        for key, param in self._params.items():
-            if hasattr(param, "to"):
-                self._params[key] = param.to(device)
-
-        return super().to(device)
 
     def train_val_split(
         self, X: torch.Tensor, val_ratio: float = 0.2
@@ -148,18 +133,28 @@ class BaseHMM(nn.Module, ABC):
 
         return X[train_indices], X[val_indices]
 
-    def sample_model_params(self, X: torch.Tensor | None = None) -> nn.ParameterDict:
+    def sample_model_params(
+        self,
+        transition_type: Transitions = Transitions.ERGODIC,
+        prior: float = 1.0,
+        observation_tensor: torch.Tensor | None = None,
+    ) -> nn.ParameterDict:
         """Initialize the model parameters."""
-        sampled_pi = torch.log(constraints.sample_probs(self.alpha, (self.n_states,)))
-        sampled_A = torch.log(
-            constraints.sample_A(self.alpha, self.n_states, self._A_type)
+        sampled_pdf = self.sample_emission_pdf(observation_tensor)
+        sampled_pi = InitialDistribution.sample_from_dirichlet(
+            prior=prior, target_size=(self.n_states,)
+        )
+        sampled_A = TransitionMatrix.sample_from_dirichlet(
+            prior=prior,
+            transition_type=transition_type,
+            target_size=(self.n_states, self.n_states),
         )
 
         return nn.ParameterDict(
             {
-                "pi": Categorical(logits=sampled_pi),
-                "A": Categorical(logits=sampled_A),
-                "emission_pdf": self.sample_emission_pdf(X),
+                "pi": sampled_pi,
+                "A": sampled_A,
+                "emission_pdf": sampled_pdf,
             }
         )
 
@@ -289,7 +284,7 @@ class BaseHMM(nn.Module, ABC):
             ValueError: If lengths don't sum to n_samples or theta has invalid shape.
         """
         if sample_B_from_X:
-            self._params.update({"emission_pdf": self.sample_emission_pdf(X)})
+            self._params.emission_pdf = self.sample_emission_pdf(X)
 
         X_valid = self.to_observations(X, lengths)
         valid_theta = self.to_contextuals(theta, X_valid) if theta is not None else None
@@ -304,7 +299,7 @@ class BaseHMM(nn.Module, ABC):
 
         for rank in range(n_init):
             if rank > 0:
-                self._params.update(self.sample_model_params(X))
+                self._params.update(self.sample_model_params(observation_tensor=X))
 
             self.conv.push_pull(self._compute_log_likelihood(X_valid).sum(), 0, rank)
             for iter in range(1, self.conv.max_iter + 1):
@@ -513,14 +508,14 @@ class BaseHMM(nn.Module, ABC):
             matrix=torch.stack([tens[0] for tens in log_gamma], 1).logsumexp(1), dim=0
         )
         new_A = constraints.log_normalize(matrix=torch.cat(log_xi).logsumexp(0), dim=1)
-        new_pdf = self._estimate_emission_pdf(
+        new_pdf = self.pdf._update_posterior(
             X=torch.cat(X.sequence), posterior=torch.cat(log_gamma).exp(), theta=theta
         )
 
         return nn.ParameterDict(
             {
-                "pi": Categorical(logits=new_pi),
-                "A": Categorical(logits=new_A),
+                "pi": InitialDistribution(logits=new_pi),
+                "A": TransitionMatrix(logits=new_A, transition_type=self._A_type),
                 "emission_pdf": new_pdf,
             }
         )
