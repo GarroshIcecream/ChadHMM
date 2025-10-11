@@ -131,6 +131,11 @@ class GaussianDistribution(MultivariateNormal, BaseDistribution):
         )
         return centers_reshaped
 
+    def _update_posterior(self, X: torch.Tensor, posterior: torch.Tensor, theta: ContextualVariables | None = None) -> None:
+        """Update the posterior distribution."""
+        self.mean = self._compute_means_jit(X, posterior)
+        self.covariance = self._compute_covs_jit(X, posterior, self.mean, self.min_covar)
+
     @staticmethod
     @torch.jit.script
     def _compute_means_jit(X: torch.Tensor, posterior: torch.Tensor) -> torch.Tensor:

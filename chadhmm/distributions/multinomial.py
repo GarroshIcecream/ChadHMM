@@ -42,8 +42,8 @@ class MultinomialDistribution(Multinomial, BaseDistribution):
         cls,
         n_components: int,
         n_features: int,
-        X: torch.Tensor | None = None,
         n_trials: int = 1,
+        X: torch.Tensor | None = None,
         alpha: float = 1.0,
     ) -> "MultinomialDistribution":
         """
@@ -112,4 +112,5 @@ class MultinomialDistribution(Multinomial, BaseDistribution):
                 "Contextualized emissions not implemented for MultinomialDistribution"
             )
 
-        self.logits = torch.log(posterior.T @ X / posterior.T.sum(1, keepdim=True))
+        new_logits = torch.log(posterior.T @ X.to(posterior.dtype) / posterior.T.sum(1, keepdim=True))
+        Multinomial.__init__(self, total_count=self.n_trials, logits=new_logits)

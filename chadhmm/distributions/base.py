@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 
 import torch
+from torch.distributions import Distribution
 
+from chadhmm.schemas import ContextualVariables
 
-class BaseDistribution(ABC):
+class BaseDistribution(ABC, Distribution):
     """
     Base class for all emission distributions in HMM/HSMM models.
 
@@ -28,6 +30,13 @@ class BaseDistribution(ABC):
         pass
 
     @abstractmethod
-    def _update_posterior(self, X: torch.Tensor, posterior: torch.Tensor) -> None:
+    def _update_posterior(self, X: torch.Tensor, posterior: torch.Tensor, theta: ContextualVariables | None = None) -> None:
         """Update distribution parameters from posterior probabilities."""
         pass
+
+    def map_emission(self, x: torch.Tensor) -> torch.Tensor:
+        """Get emission probabilities for a given sequence of observations."""
+        pdf_shape = self.batch_shape + self.event_shape
+        b_size = torch.Size([x.shape[0]]) + pdf_shape
+        x_batched = x.unsqueeze(-len(pdf_shape)).expand(b_size)
+        return self.log_prob(x_batched).squeeze()

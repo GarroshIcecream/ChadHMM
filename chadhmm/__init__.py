@@ -10,7 +10,7 @@ I'm not a professional programmer, I'm just a guy who likes to code.
 If you have any suggestions, please let me know. I'm open to all ideas.
 """
 
-from .hmm import GaussianHMM, GaussianMixtureHMM, MultinomialHMM, PoissonHMM
+from .hmm import HMM
 from .hsmm import GaussianHSMM, GaussianMixtureHSMM, MultinomialHSMM, PoissonHSMM
 from .schemas import (
     ContextualVariables,
@@ -23,13 +23,10 @@ from .schemas import (
 from .utils import ConvergenceHandler, SeedGenerator
 
 __all__ = [
-    "MultinomialHMM",
-    "MultinomialHSMM",
-    "GaussianHMM",
+    "HMM",
     "GaussianHSMM",
-    "PoissonHMM",
     "PoissonHSMM",
-    "GaussianMixtureHMM",
+    "MultinomialHSMM",
     "GaussianMixtureHSMM",
     "Observations",
     "ContextualVariables",
