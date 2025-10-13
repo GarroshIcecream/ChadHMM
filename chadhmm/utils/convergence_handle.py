@@ -36,7 +36,7 @@ class ConvergenceHandler:
         self.post_conv_iter = post_conv_iter
         self.max_iter = max_iter
         self.score = torch.full(
-            size=(max_iter + 1, n_init), fill_value=float("nan"), dtype=torch.float64
+            size=(max_iter + 1, n_init), fill_value=float("nan"), dtype=torch.float
         )
         self.delta = self.score.clone()
 
@@ -87,7 +87,6 @@ class ConvergenceHandler:
                     + f"Iteration: {iter} | "
                     + f"Score: {score:.2f} | "
                     + f"Delta: {delta:.2f} | "
-                    + f"Converged = {self.is_converged}"
                 )
 
         return self.is_converged

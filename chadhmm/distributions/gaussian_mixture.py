@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from sklearn.cluster import KMeans
 from torch.distributions import Categorical, MixtureSameFamily, MultivariateNormal
 
@@ -7,7 +8,7 @@ from chadhmm.schemas import ContextualVariables
 from chadhmm.utils import constraints
 
 
-class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
+class GaussianMixtureDistribution(nn.Module, BaseDistribution):
     """
     Gaussian Mixture distribution for HMM/HSMM models.
 
@@ -21,7 +22,7 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
     means (torch.Tensor):
         Means of the Gaussian components of shape (n_states, n_components, n_features).
     covariances (torch.Tensor):
-        Covariances of the Gaussian components of shape 
+        Covariances of the Gaussian components of shape
         (n_states, n_components, n_features, n_features).
     min_covar (float):
         Minimum covariance value for numerical stability.
@@ -34,52 +35,87 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         covariances: torch.Tensor,
         min_covar: float = 1e-3,
     ):
+        super().__init__()
         self.min_covar = min_covar
-        mixture_dist = Categorical(logits=weights)
-        component_dist = MultivariateNormal(loc=means, covariance_matrix=covariances)
-        super().__init__(mixture_dist, component_dist, validate_args=True)
+        self._weights = nn.Parameter(weights.clone(), requires_grad=False)
+        self._means = nn.Parameter(means.clone(), requires_grad=False)
+        self._covariances = nn.Parameter(covariances.clone(), requires_grad=False)
+
+    @property
+    def mixture_distribution(self):
+        """Get the mixture distribution (Categorical)."""
+        return Categorical(logits=self._weights)
+
+    @property
+    def component_distribution(self):
+        """Get the component distribution (MultivariateNormal)."""
+        return MultivariateNormal(loc=self._means, covariance_matrix=self._covariances)
+
+    @property
+    def n_mixtures(self) -> int:
+        return self._weights.shape[0]
+
+    @property
+    def n_components(self) -> int:
+        return self._means.shape[0]
 
     @property
     def n_states(self) -> int:
-        return self.mixture_distribution.logits.shape[0]
-    
-    @property
-    def n_components(self) -> int:
-        return self.mixture_distribution.logits.shape[1]
-    
-    @property
-    def n_features(self) -> int:
-        return self.component_distribution.loc.shape[-1]
+        return self._means.shape[1]
 
     @property
-    def mixture_distribution(self) -> Categorical:
-        return self.mixture_distribution
-    
-    @property
-    def component_distribution(self) -> MultivariateNormal:
-        return self.component_distribution
+    def n_features(self) -> int:
+        return self._means.shape[-1]
 
     @property
     def dof(self) -> int:
         """
-        Degrees of freedom: number of mixture weights + mean parameters + covariance parameters.
+        Degrees of freedom: number of mixture weights + mean parameters +
+        covariance parameters.
         """
-        n_states, n_components = self.mixture_distribution.logits.shape
+        n_states, n_components = self._weights.shape
         weights_dof = n_states * (n_components - 1)
-        means_dof = self.component_distribution.loc.numel()
-        covs_dof = self.component_distribution.covariance_matrix.numel()
+        means_dof = self._means.numel()
+        covs_dof = self._covariances.numel()
         return weights_dof + means_dof + covs_dof
+
+    @property
+    def batch_shape(self) -> torch.Size:
+        """Batch shape: (n_states,)"""
+        return torch.Size([self.n_states])
+
+    @property
+    def event_shape(self) -> torch.Size:
+        """Event shape: (n_features,)"""
+        return torch.Size([self.n_features])
+
+    def log_prob(self, value: torch.Tensor) -> torch.Tensor:
+        """Compute log probability."""
+        mixture_dist = Categorical(logits=self._weights)
+        component_dist = MultivariateNormal(
+            loc=self._means, covariance_matrix=self._covariances
+        )
+        return MixtureSameFamily(mixture_dist, component_dist).log_prob(value)
+
+    def sample(self, sample_shape: torch.Size) -> torch.Tensor:
+        """Sample from the distribution."""
+        mixture_dist = Categorical(logits=self._weights)
+        component_dist = MultivariateNormal(
+            loc=self._means, covariance_matrix=self._covariances
+        )
+        return MixtureSameFamily(mixture_dist, component_dist).sample(sample_shape)
 
     @classmethod
     def sample_distribution(
         cls,
         n_components: int,
         n_features: int,
-        n_mixture_components: int = 1,
         X: torch.Tensor | None = None,
+        n_mixture_components: int = 1,
         k_means: bool = False,
         min_covar: float = 1e-3,
         alpha: float = 1.0,
+        **kwargs,
     ) -> "GaussianMixtureDistribution":
         """
         Sample/initialize a Gaussian Mixture distribution.
@@ -171,11 +207,13 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         """
         if theta is not None:
             raise NotImplementedError(
-                "Contextualized emissions not implemented for GaussianMixtureDistribution"
+                "Contextualized emissions not implemented for "
+                "GaussianMixtureDistribution"
             )
 
-        # This will be called during EM, need a reference to current distribution
-        # For now, this is a placeholder - actual implementation requires access to current weights
+        # This will be called during EM, need a reference to current
+        # distribution. For now, this is a placeholder - actual implementation
+        # requires access to current weights
         raise NotImplementedError(
             "from_posterior_distribution should use _update_posterior instead"
         )
@@ -189,13 +227,15 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         seed: int | None = None,
     ) -> torch.Tensor:
         """Sample cluster means from K-Means algorithm."""
-        k_means_alg = KMeans(
-            n_clusters=n_states, random_state=seed, n_init="auto"
-        ).fit(X.cpu().numpy())
+        k_means_alg = KMeans(n_clusters=n_states, random_state=seed, n_init="auto").fit(
+            X.cpu().numpy()
+        )
 
-        return torch.from_numpy(k_means_alg.cluster_centers_).reshape(
-            n_states, n_mixture_components, n_features
-        ).to(X.device)
+        return (
+            torch.from_numpy(k_means_alg.cluster_centers_)
+            .reshape(n_states, n_mixture_components, n_features)
+            .to(X.device)
+        )
 
     def _compute_log_responsibilities(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -212,9 +252,11 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
             Log responsibilities of shape (n_samples, n_states, n_components)
         """
         X_expanded = X.unsqueeze(-2).unsqueeze(-2)
-        component_log_probs = self.component_distribution.log_prob(X_expanded)
+        component_log_probs = MultivariateNormal(
+            loc=self._means, covariance_matrix=self._covariances
+        ).log_prob(X_expanded)
         log_responsibilities = constraints.log_normalize(
-            matrix=self.mixture_distribution.logits.unsqueeze(0) + component_log_probs,
+            matrix=self._weights.unsqueeze(0) + component_log_probs,
             dim=1,
         )
         return log_responsibilities
@@ -239,7 +281,8 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         """
         if theta is not None:
             raise NotImplementedError(
-                "Contextualized emissions not implemented for GaussianMixtureDistribution"
+                "Contextualized emissions not implemented for "
+                "GaussianMixtureDistribution"
             )
 
         responsibilities = self._compute_log_responsibilities(X).exp()
@@ -251,9 +294,9 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         new_means = self._compute_means(X, posterior_resp)
         new_covs = self._compute_covs(X, posterior_resp, new_means)
 
-        self.mixture_distribution.logits = new_weights
-        self.component_distribution.loc = new_means
-        self.component_distribution.covariance_matrix = new_covs
+        self._weights.data = new_weights
+        self._means.data = new_means
+        self._covariances.data = new_covs
 
     def _compute_means(
         self,
@@ -268,7 +311,8 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         X : torch.Tensor
             Observed data of shape (n_samples, n_features)
         posterior_resp : torch.Tensor
-            Combined posterior responsibilities of shape (n_states, n_components, n_samples)
+            Combined posterior responsibilities of shape
+            (n_states, n_components, n_samples)
 
         Returns:
         --------
@@ -293,14 +337,16 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         X : torch.Tensor
             Observed data of shape (n_samples, n_features)
         posterior_resp : torch.Tensor
-            Combined posterior responsibilities of shape (n_states, n_components, n_samples)
+            Combined posterior responsibilities of shape
+            (n_states, n_components, n_samples)
         new_means : torch.Tensor
             Updated means of shape (n_states, n_components, n_features)
 
         Returns:
         --------
         torch.Tensor
-            Updated covariances of shape (n_states, n_components, n_features, n_features)
+            Updated covariances of shape
+            (n_states, n_components, n_features, n_features)
         """
         posterior_adj = posterior.unsqueeze(-1)
         diff = X.unsqueeze(0).expand(
@@ -309,6 +355,5 @@ class GaussianMixtureDistribution(MixtureSameFamily, BaseDistribution):
         new_covs = torch.transpose(diff * posterior_adj, -1, -2) @ diff
         new_covs /= posterior_adj.sum(-2, keepdim=True)
         new_covs += self.min_covar * torch.eye(self.n_features)
-        
-        return new_covs
 
+        return new_covs

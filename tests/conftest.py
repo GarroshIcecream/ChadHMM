@@ -4,9 +4,18 @@ import tempfile
 import pytest
 import torch
 
-from chadhmm.hmm import GaussianHMM, GaussianMixtureHMM, MultinomialHMM, PoissonHMM
-from chadhmm.hsmm import GaussianHSMM, MultinomialHSMM
-from chadhmm.schemas import CovarianceType, Transitions
+from chadhmm.distributions import (
+    DurationDistribution,
+    GaussianDistribution,
+    GaussianMixtureDistribution,
+    InitialDistribution,
+    MultinomialDistribution,
+    PoissonDistribution,
+    TransitionMatrix,
+)
+from chadhmm.hmm import HMM
+from chadhmm.hsmm import HSMM
+from chadhmm.schemas import Transitions
 from chadhmm.utils import constraints
 
 
@@ -26,41 +35,70 @@ def sample_data():
 @pytest.fixture
 def sample_models():
     """Provide sample models for testing."""
+    torch.manual_seed(42)
+
+    # Helper to create HMM
+    def create_hmm(emission_pdf, n_states, transitions):
+        pi = InitialDistribution.sample_from_dirichlet(1.0, torch.Size([n_states]))
+        A = TransitionMatrix.sample_from_dirichlet(
+            1.0, transitions, torch.Size([n_states, n_states])
+        )
+        return HMM(
+            transition_matrix=A, initial_distribution=pi, emission_pdf=emission_pdf
+        )
+
+    # Helper to create HSMM
+    def create_hsmm(emission_pdf, n_states, max_duration):
+        pi = InitialDistribution.sample_from_dirichlet(1.0, torch.Size([n_states]))
+        A = TransitionMatrix.sample_from_dirichlet(
+            1.0, Transitions.SEMI, torch.Size([n_states, n_states])
+        )
+        D = DurationDistribution.sample_from_dirichlet(
+            1.0, torch.Size([n_states, max_duration])
+        )
+        return HSMM(
+            transition_matrix=A,
+            initial_distribution=pi,
+            duration_distribution=D,
+            emission_pdf=emission_pdf,
+        )
+
     return {
-        "multinomial_hmm": MultinomialHMM(
+        "multinomial_hmm": create_hmm(
+            MultinomialDistribution.sample_distribution(
+                n_components=3, n_features=4, n_trials=2
+            ),
             n_states=3,
-            n_features=4,
             transitions=Transitions.ERGODIC,
-            n_trials=2,
-            seed=42,
         ),
-        "gaussian_hmm": GaussianHMM(
+        "gaussian_hmm": create_hmm(
+            GaussianDistribution.sample_distribution(n_components=3, n_features=2),
             n_states=3,
-            n_features=2,
             transitions=Transitions.ERGODIC,
-            covariance_type=CovarianceType.FULL,
-            seed=42,
         ),
-        "gaussian_mixture_hmm": GaussianMixtureHMM(
+        "gaussian_mixture_hmm": create_hmm(
+            GaussianMixtureDistribution.sample_distribution(
+                n_components=2, n_features=2, n_mixture_components=3
+            ),
             n_states=2,
-            n_features=2,
             transitions=Transitions.ERGODIC,
-            covariance_type=CovarianceType.FULL,
-            n_components=3,
-            seed=42,
         ),
-        "poisson_hmm": PoissonHMM(
-            n_states=3, n_features=2, transitions=Transitions.ERGODIC, seed=42
-        ),
-        "multinomial_hsmm": MultinomialHSMM(
-            n_states=3, n_features=4, n_trials=2, max_duration=10, seed=42
-        ),
-        "gaussian_hsmm": GaussianHSMM(
+        "poisson_hmm": create_hmm(
+            PoissonDistribution.sample_distribution(n_components=3, n_features=2),
             n_states=3,
-            n_features=2,
+            transitions=Transitions.ERGODIC,
+        ),
+        "multinomial_hsmm": create_hsmm(
+            MultinomialDistribution.sample_distribution(
+                n_components=3, n_features=4, n_trials=2
+            ),
+            n_states=3,
             max_duration=10,
-            covariance_type=CovarianceType.FULL,
-            seed=42,
+        ),
+        "gaussian_hsmm": create_hsmm(
+            GaussianDistribution.sample_distribution(n_components=3, n_features=2),
+            n_states=3,
+            max_duration=10,
         ),
     }
 

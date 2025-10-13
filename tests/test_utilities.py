@@ -10,7 +10,7 @@ from chadhmm.schemas import (
     Observations,
     Transitions,
 )
-from chadhmm.utils import ConvergenceHandler, SeedGenerator, constraints
+from chadhmm.utils import ConvergenceHandler, constraints
 
 
 class TestConstraints(unittest.TestCase):
@@ -154,26 +154,6 @@ class TestConvergenceHandler(unittest.TestCase):
         # Should converge at max_iter
         converged = conv.push_pull(torch.tensor(-100.3), 3, 0)
         self.assertTrue(converged)
-
-
-class TestSeedGenerator(unittest.TestCase):
-    """Test seed generation."""
-
-    def test_initialization(self):
-        """Test seed generator initialization."""
-        # With seed
-        gen = SeedGenerator(42)
-        self.assertEqual(gen.seed, 42)
-
-        # Without seed
-        gen2 = SeedGenerator(None)
-        self.assertIsNotNone(gen2.seed)
-
-    def test_reproducibility(self):
-        """Test seed reproducibility."""
-        gen1 = SeedGenerator(42)
-        gen2 = SeedGenerator(42)
-        self.assertEqual(gen1.seed, gen2.seed)
 
 
 class TestUtils(unittest.TestCase):

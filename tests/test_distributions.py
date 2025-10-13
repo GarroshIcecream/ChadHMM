@@ -25,7 +25,7 @@ class TestInitialDistribution(unittest.TestCase):
         pi = InitialDistribution(logits=self.logits)
         self.assertEqual(pi.n_states, self.n_states)
         self.assertTrue(
-            torch.allclose(pi.logits.sum(), torch.tensor(1.0, dtype=torch.float64))
+            torch.allclose(pi.probs.sum(), torch.tensor(1.0, dtype=torch.float64))
         )
 
     def test_initialization_with_probs(self):
@@ -33,7 +33,7 @@ class TestInitialDistribution(unittest.TestCase):
         probs = torch.tensor([0.5, 0.3, 0.2], dtype=torch.float64)
         pi = InitialDistribution(probs=probs)
         self.assertEqual(pi.n_states, self.n_states)
-        self.assertTrue(torch.allclose(pi.logits, probs))
+        self.assertTrue(torch.allclose(pi.probs, probs))
 
     def test_invalid_dimensions(self):
         """Test that 2D logits raise an error."""
@@ -43,7 +43,7 @@ class TestInitialDistribution(unittest.TestCase):
     def test_sampling(self):
         """Test sampling from the distribution."""
         pi = InitialDistribution(logits=self.logits)
-        sample = pi.sample()
+        sample = pi.sample(torch.Size([]))
         self.assertTrue(0 <= sample < self.n_states)
 
     def test_repr(self):
@@ -209,38 +209,56 @@ class TestDistributionIntegration(unittest.TestCase):
 
     def test_hmm_uses_custom_distributions(self):
         """Test that HMM uses custom distribution classes."""
-        from chadhmm.hmm import GaussianHMM
-        from chadhmm.utils.constraints import CovarianceType
+        from chadhmm.distributions import GaussianDistribution
+        from chadhmm.hmm import HMM
 
-        hmm = GaussianHMM(
-            n_states=3,
-            n_features=2,
-            transitions=Transitions.ERGODIC,
-            covariance_type=CovarianceType.FULL,
-            seed=42,
+        # Create distributions
+        pi = InitialDistribution.sample_from_dirichlet(1.0, torch.Size([3]))
+        A = TransitionMatrix.sample_from_dirichlet(
+            1.0, Transitions.ERGODIC, torch.Size([3, 3])
+        )
+        emission_pdf = GaussianDistribution.sample_distribution(
+            n_components=3, n_features=2
         )
 
-        self.assertIsInstance(hmm._params.pi, InitialDistribution)
-        self.assertIsInstance(hmm._params.A, TransitionMatrix)
-        self.assertEqual(hmm._params.A.transition_type, Transitions.ERGODIC)
+        # Create HMM
+        hmm = HMM(
+            transition_matrix=A,
+            initial_distribution=pi,
+            emission_pdf=emission_pdf,
+        )
+
+        self.assertIsInstance(hmm.pi, InitialDistribution)
+        self.assertIsInstance(hmm.A, TransitionMatrix)
+        self.assertEqual(hmm.A.transition_type, Transitions.ERGODIC)
 
     def test_hsmm_uses_custom_distributions(self):
         """Test that HSMM uses custom distribution classes."""
-        from chadhmm.hsmm import GaussianHSMM
-        from chadhmm.utils.constraints import CovarianceType
+        from chadhmm.distributions import GaussianDistribution
+        from chadhmm.hsmm import HSMM
 
-        hsmm = GaussianHSMM(
-            n_states=3,
-            n_features=2,
-            max_duration=5,
-            covariance_type=CovarianceType.FULL,
-            seed=42,
+        # Create distributions
+        pi = InitialDistribution.sample_from_dirichlet(1.0, torch.Size([3]))
+        A = TransitionMatrix.sample_from_dirichlet(
+            1.0, Transitions.SEMI, torch.Size([3, 3])
+        )
+        D = DurationDistribution.sample_from_dirichlet(1.0, torch.Size([3, 5]))
+        emission_pdf = GaussianDistribution.sample_distribution(
+            n_components=3, n_features=2
         )
 
-        self.assertIsInstance(hsmm._params.pi, InitialDistribution)
-        self.assertIsInstance(hsmm._params.A, TransitionMatrix)
-        self.assertIsInstance(hsmm._params.D, DurationDistribution)
-        self.assertEqual(hsmm._params.A.transition_type, Transitions.SEMI)
+        # Create HSMM
+        hsmm = HSMM(
+            transition_matrix=A,
+            initial_distribution=pi,
+            duration_distribution=D,
+            emission_pdf=emission_pdf,
+        )
+
+        self.assertIsInstance(hsmm.pi, InitialDistribution)
+        self.assertIsInstance(hsmm.A, TransitionMatrix)
+        self.assertIsInstance(hsmm.D, DurationDistribution)
+        self.assertEqual(hsmm.A.transition_type, Transitions.SEMI)
 
 
 if __name__ == "__main__":
