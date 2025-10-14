@@ -22,6 +22,7 @@
   - [Hidden Markov Models (HMM)](#hidden-markov-models-hmm)
   - [Hidden Semi-Markov Models (HSMM)](#hidden-semi-markov-models-hsmm)
   - [Model Training](#model-training)
+    - [Training Mode and Compilation](#training-mode-and-compilation)
   - [Inference and Decoding](#inference-and-decoding)
   - [Model Evaluation](#model-evaluation)
 - [Available Distributions](#available-distributions)
@@ -39,6 +40,7 @@
 - 📊 Multiple emission distributions: Gaussian, Gaussian Mixture, Multinomial, Poisson
 - 🎲 Flexible transition types: Ergodic, Left-to-Right, and custom configurations
 - 🧮 Efficient inference algorithms: Viterbi, MAP, Forward-Backward
+- ⚡ Compiled algorithms with training mode control for optimized performance
 - 📈 Model selection tools: AIC, BIC, HQC information criteria
 
 ## Installation
@@ -264,6 +266,21 @@ hmm.fit(
     tol=1e-4,               # Convergence tolerance
     verbose=True            # Print progress
 )
+```
+
+#### Training Mode and Compilation
+
+ChadHMM models inherit from `torch.nn.Module` and support training mode control similar to PyTorch. The models use compiled forward/backward algorithms during training for maximum performance, and automatically switch to non-compiled versions during inference to avoid compilation overhead.
+
+```python
+# Training mode (uses compiled algorithms for speed)
+hmm.train()
+hmm.fit(X, max_iter=20)
+
+# Evaluation mode (uses non-compiled algorithms to avoid overhead)
+hmm.eval()
+predictions = hmm.predict(X_test, algorithm=DecodingAlgorithm.VITERBI)
+log_likelihood = hmm.score(X_test)
 ```
 
 ### Inference and Decoding

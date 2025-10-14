@@ -205,14 +205,12 @@ class HMM(nn.Module):
             ValueError: If X contains values outside the support of the emission
                 distribution.
         """
-        with torch.inference_mode():
-            X_valid = self.to_observations(X, lengths)
-            if algorithm == DecodingAlgorithm.MAP:
+        X_valid = self.to_observations(X, lengths)
+        match algorithm:
+            case DecodingAlgorithm.MAP:
                 decoded_path = self._map(X_valid)
-            elif algorithm == DecodingAlgorithm.VITERBI:
+            case DecodingAlgorithm.VITERBI:
                 decoded_path = self._viterbi(X_valid)
-            else:
-                raise ValueError(f"Unknown decoder algorithm {algorithm}")
 
         return decoded_path
 
@@ -220,9 +218,8 @@ class HMM(nn.Module):
         self, X: torch.Tensor, lengths: list[int] | None = None, by_sample: bool = True
     ) -> torch.Tensor:
         """Compute the joint log-likelihood"""
-        with torch.inference_mode():
-            X_valid = self.to_observations(X, lengths)
-            log_likelihoods = self._compute_log_likelihood(X_valid)
+        X_valid = self.to_observations(X, lengths)
+        log_likelihoods = self._compute_log_likelihood(X_valid)
 
         if not by_sample:
             log_likelihoods = log_likelihoods.sum(0, keepdim=True)
@@ -237,11 +234,10 @@ class HMM(nn.Module):
         by_sample: bool = True,
     ) -> torch.Tensor:
         """Calculates the information criteria for a given model."""
-        with torch.inference_mode():
-            log_likelihood = self.score(X, lengths, by_sample)
-            information_criteria = constraints.compute_information_criteria(
-                X.shape[0], log_likelihood, self.dof, criterion
-            )
+        log_likelihood = self.score(X, lengths, by_sample)
+        information_criteria = constraints.compute_information_criteria(
+            X.shape[0], log_likelihood, self.dof, criterion
+        )
 
         return information_criteria
 
@@ -275,68 +271,79 @@ class HMM(nn.Module):
         else:
             generator.manual_seed(torch.random.seed())
 
-        with torch.inference_mode():
-            # Convert log probabilities to probabilities
-            pi_probs = self.pi.logits.exp()
-            A_probs = self.A.logits.exp()
+        # Convert log probabilities to probabilities
+        pi_probs = self.pi.logits.exp()
+        A_probs = self.A.logits.exp()
 
-            # Sample initial state
-            states = torch.zeros(n_samples, dtype=torch.long, device=device)
-            states[0] = torch.multinomial(pi_probs, num_samples=1, generator=generator)
+        # Sample initial state
+        states = torch.zeros(n_samples, dtype=torch.long, device=device)
+        states[0] = torch.multinomial(pi_probs, num_samples=1, generator=generator)
 
-            # Sample subsequent states
-            for t in range(1, n_samples):
-                current_state = states[t - 1]
-                states[t] = torch.multinomial(
-                    A_probs[current_state], num_samples=1, generator=generator
-                )
+        # Sample subsequent states
+        for t in range(1, n_samples):
+            current_state = states[t - 1]
+            states[t] = torch.multinomial(
+                A_probs[current_state], num_samples=1, generator=generator
+            )
 
-            # Sample observations from emission distribution
-            # Generate n_samples observations, one for each time step
-            # Sample shape (n_samples, n_components, *event_shape)
-            all_samples = self.emission_pdf.sample(torch.Size([n_samples]))
+        # Sample observations from emission distribution
+        # Generate n_samples observations, one for each time step
+        # Sample shape (n_samples, n_components, *event_shape)
+        all_samples = self.emission_pdf.sample(torch.Size([n_samples]))
 
-            # Select the sample from the corresponding state at each time step
-            # Create indices for batch dimension
-            batch_idx = torch.arange(n_samples, device=device)
-            samples = all_samples[batch_idx, states]
+        # Select the sample from the corresponding state at each time step
+        # Create indices for batch dimension
+        batch_idx = torch.arange(n_samples, device=device)
+        samples = all_samples[batch_idx, states]
 
         return samples, states
 
     @staticmethod
-    @torch.compile
-    def _forward_compiled(
-        n_states: int, log_probs: torch.Tensor, A: torch.Tensor, pi: torch.Tensor
+    def _forward_uncompiled(
+        n_states: int,
+        log_probs: torch.Tensor,
+        A: torch.Tensor,
+        pi: torch.Tensor,
+        lengths: torch.Tensor,
     ) -> torch.Tensor:
-        """Compiled forward algorithm implementation."""
-        seq_len = log_probs.shape[0]
+        """Batched forward algorithm with masking for variable lengths (non-compiled).
+
+        Args:
+            n_states: Number of hidden states
+            log_probs: Log emission probabilities of shape
+                (batch_size, max_seq_len, n_states)
+            A: Log transition matrix of shape (n_states, n_states)
+            pi: Log initial distribution of shape (n_states,)
+            lengths: Actual sequence lengths of shape (batch_size,)
+
+        Returns:
+            log_alpha: Forward variables of shape (batch_size, max_seq_len, n_states)
+        """
+        batch_size, max_seq_len, _ = log_probs.shape
         log_alpha = torch.zeros(
-            (seq_len, n_states), dtype=log_probs.dtype, device=A.device
+            (batch_size, max_seq_len, n_states), dtype=log_probs.dtype, device=A.device
         )
 
-        log_alpha[0] = pi + log_probs[0]
-        for t in range(seq_len - 1):
-            log_alpha[t + 1] = log_probs[t + 1] + torch.logsumexp(
-                A + log_alpha[t].unsqueeze(-1), dim=0
+        log_alpha[:, 0] = pi + log_probs[:, 0]
+
+        time_indices = torch.arange(max_seq_len, device=A.device).unsqueeze(0)
+        mask = time_indices < lengths.unsqueeze(1)
+
+        for t in range(max_seq_len - 1):
+            next_alpha = log_probs[:, t + 1] + torch.logsumexp(
+                A.unsqueeze(0) + log_alpha[:, t].unsqueeze(-1), dim=1
+            )
+
+            active_mask = mask[:, t + 1].unsqueeze(-1)
+            log_alpha[:, t + 1] = torch.where(
+                active_mask, next_alpha, log_alpha[:, t + 1]
             )
 
         return log_alpha
 
-    def _forward(self, X: Observations) -> list[torch.Tensor]:
-        """Forward pass of the forward-backward algorithm."""
-        alpha_vec = []
-        for log_probs in X.log_probs:
-            alpha_vec.append(
-                self._forward_compiled(
-                    self.n_states, log_probs, self.A.logits, self.pi.logits
-                )
-            )
-
-        return alpha_vec
-
     @staticmethod
     @torch.compile
-    def _forward_batched_compiled(
+    def _forward_compiled(
         n_states: int,
         log_probs: torch.Tensor,
         A: torch.Tensor,
@@ -378,11 +385,19 @@ class HMM(nn.Module):
 
         return log_alpha
 
-    def _forward_batched(self, X: Observations) -> list[torch.Tensor]:
-        """Batched forward pass using padding and masking."""
-        if len(X.lengths) <= 1:
-            return self._forward(X)
+    def forward(self, X: Observations) -> list[torch.Tensor]:
+        """Forward pass using batched operations with padding and masking.
 
+        Uses compiled version during training for speed, non-compiled during inference
+        to avoid compilation overhead.
+
+        Args:
+            X: Observations object containing sequences and their log probabilities
+
+        Returns:
+            List of forward variable tensors (alpha) for each sequence.
+            Each tensor has shape (seq_len, n_states) containing log probabilities.
+        """
         max_len = max(X.lengths)
         padded_log_probs = []
         for log_probs in X.log_probs:
@@ -398,13 +413,23 @@ class HMM(nn.Module):
             X.lengths, dtype=torch.long, device=batched_log_probs.device
         )
 
-        batched_alpha = self._forward_batched_compiled(
-            self.n_states,
-            batched_log_probs,
-            self.A.logits,
-            self.pi.logits,
-            lengths_tensor,
-        )
+        # Use compiled version during training, uncompiled during inference
+        if self.training:
+            batched_alpha = self._forward_compiled(
+                self.n_states,
+                batched_log_probs,
+                self.A.logits,
+                self.pi.logits,
+                lengths_tensor,
+            )
+        else:
+            batched_alpha = self._forward_uncompiled(
+                self.n_states,
+                batched_log_probs,
+                self.A.logits,
+                self.pi.logits,
+                lengths_tensor,
+            )
 
         alpha_vec = []
         for i, length in enumerate(X.lengths):
@@ -413,34 +438,47 @@ class HMM(nn.Module):
         return alpha_vec
 
     @staticmethod
-    @torch.compile
-    def _backward_compiled(
-        n_states: int, log_probs: torch.Tensor, A: torch.Tensor
+    def _backward_uncompiled(
+        n_states: int,
+        log_probs: torch.Tensor,
+        A: torch.Tensor,
+        lengths: torch.Tensor,
     ) -> torch.Tensor:
-        """Compiled backward algorithm implementation."""
-        seq_len = log_probs.shape[0]
-        log_beta = torch.zeros(
-            (seq_len, n_states), dtype=log_probs.dtype, device=A.device
-        )
+        """Batched backward algorithm with masking for variable lengths (non-compiled).
 
-        for t in range(seq_len - 2, -1, -1):
-            log_beta[t] = torch.logsumexp(A + log_probs[t + 1] + log_beta[t + 1], dim=1)
+        Args:
+            n_states: Number of hidden states
+            log_probs: Log emission probabilities of shape
+                (batch_size, max_seq_len, n_states)
+            A: Log transition matrix of shape (n_states, n_states)
+            lengths: Actual sequence lengths of shape (batch_size,)
+
+        Returns:
+            log_beta: Backward variables of shape (batch_size, max_seq_len, n_states)
+        """
+        batch_size, max_seq_len, _ = log_probs.shape
+        log_beta = torch.zeros(
+            (batch_size, max_seq_len, n_states), dtype=log_probs.dtype, device=A.device
+        )
+        time_indices = torch.arange(max_seq_len, device=A.device).unsqueeze(0)
+        mask = time_indices < lengths.unsqueeze(1)
+
+        for t in range(max_seq_len - 2, -1, -1):
+            next_beta = torch.logsumexp(
+                A.unsqueeze(0)
+                + log_probs[:, t + 1].unsqueeze(1)
+                + log_beta[:, t + 1].unsqueeze(1),
+                dim=2,
+            )
+
+            active_mask = mask[:, t].unsqueeze(-1)
+            log_beta[:, t] = torch.where(active_mask, next_beta, log_beta[:, t])
 
         return log_beta
 
-    def _backward(self, X: Observations) -> list[torch.Tensor]:
-        """Backward pass of the forward-backward algorithm."""
-        beta_vec: list[torch.Tensor] = []
-        for log_probs in X.log_probs:
-            beta_vec.append(
-                self._backward_compiled(self.n_states, log_probs, self.A.logits)
-            )
-
-        return beta_vec
-
     @staticmethod
     @torch.compile
-    def _backward_batched_compiled(
+    def _backward_compiled(
         n_states: int,
         log_probs: torch.Tensor,
         A: torch.Tensor,
@@ -478,11 +516,19 @@ class HMM(nn.Module):
 
         return log_beta
 
-    def _backward_batched(self, X: Observations) -> list[torch.Tensor]:
-        """Batched backward pass using padding and masking."""
-        if len(X.log_probs) <= 1:
-            return self._backward(X)
+    def backward(self, X: Observations) -> list[torch.Tensor]:
+        """Backward pass using batched operations with padding and masking.
 
+        Uses compiled version during training for speed, non-compiled during inference
+        to avoid compilation overhead.
+
+        Args:
+            X: Observations object containing sequences and their log probabilities
+
+        Returns:
+            List of backward variable tensors (beta) for each sequence.
+            Each tensor has shape (seq_len, n_states) containing log probabilities.
+        """
         max_len = max(X.lengths)
         padded_log_probs = []
         for log_probs in X.log_probs:
@@ -499,9 +545,15 @@ class HMM(nn.Module):
             X.lengths, dtype=torch.long, device=batched_log_probs.device
         )
 
-        batched_beta = self._backward_batched_compiled(
-            self.n_states, batched_log_probs, self.A.logits, lengths_tensor
-        )
+        # Use compiled version during training, uncompiled during inference
+        if self.training:
+            batched_beta = self._backward_compiled(
+                self.n_states, batched_log_probs, self.A.logits, lengths_tensor
+            )
+        else:
+            batched_beta = self._backward_uncompiled(
+                self.n_states, batched_log_probs, self.A.logits, lengths_tensor
+            )
 
         beta_vec = []
         for i, length in enumerate(X.lengths):
@@ -540,25 +592,29 @@ class HMM(nn.Module):
 
         return log_gamma, log_xi
 
-    def _compute_posteriors(
+    def compute_posteriors(
         self, X: Observations
     ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
-        """Execute the forward-backward algorithm and compute the log-Gamma and
-        log-Xi variables.
+        """Execute the forward-backward algorithm and compute posterior probabilities.
+
+        Computes the state posteriors (gamma) and transition posteriors (xi) for each
+        sequence using the forward-backward algorithm.
 
         Args:
             X: Observations object containing sequences and their log probabilities
 
         Returns:
             Tuple[List[torch.Tensor], List[torch.Tensor]]:
-                - List of log_gamma tensors for each sequence
-                - List of log_xi tensors for each sequence
+                - log_gamma: List of state posterior tensors for each sequence.
+                  Each tensor has shape (seq_len, n_states) in log space.
+                - log_xi: List of transition posterior tensors for each sequence.
+                  Each tensor has shape (seq_len-1, n_states, n_states) in log space.
         """
         gamma_vec: list[torch.Tensor] = []
         xi_vec: list[torch.Tensor] = []
 
-        log_alpha_vec = self._forward_batched(X)
-        log_beta_vec = self._backward_batched(X)
+        log_alpha_vec = self.forward(X)
+        log_beta_vec = self.backward(X)
 
         for log_alpha, log_beta, log_probs in zip(
             log_alpha_vec, log_beta_vec, X.log_probs, strict=False
@@ -575,7 +631,7 @@ class HMM(nn.Module):
         self, X: Observations, theta: ContextualVariables | None = None
     ) -> None:
         """Compute the updated parameters for the model."""
-        log_gamma, log_xi = self._compute_posteriors(X)
+        log_gamma, log_xi = self.compute_posteriors(X)
 
         self.pi._logits.data = constraints.log_normalize(
             matrix=torch.stack([tens[0] for tens in log_gamma], 1).logsumexp(1), dim=0
@@ -612,7 +668,7 @@ class HMM(nn.Module):
 
         viterbi_prob[0] = log_probs[0] + pi
         for t in range(1, seq_len):
-            trans_seq = A + (viterbi_prob[t - 1] + log_probs[t]).reshape(-1, 1)
+            trans_seq = A + viterbi_prob[t - 1].reshape(-1, 1) + log_probs[t]
             viterbi_prob[t] = torch.max(trans_seq, dim=0).values
             psi[t] = torch.argmax(trans_seq, dim=0)
 
@@ -635,13 +691,13 @@ class HMM(nn.Module):
 
     def _map(self, X: Observations) -> list[torch.Tensor]:
         """Compute the most likely (MAP) sequence of indiviual hidden states."""
-        gamma_vec, _ = self._compute_posteriors(X)
+        gamma_vec, _ = self.compute_posteriors(X)
         map_paths = [gamma.argmax(1) for gamma in gamma_vec]
         return map_paths
 
     def _compute_log_likelihood(self, X: Observations) -> torch.Tensor:
         """Compute the log-likelihood of the given sequence."""
-        log_alpha_vec = self._forward(X)
+        log_alpha_vec = self.forward(X)
         concated_fwd = torch.stack([log_alpha[-1] for log_alpha in log_alpha_vec], 1)
         scores = concated_fwd.logsumexp(0)
         return scores
